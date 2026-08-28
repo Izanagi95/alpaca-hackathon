@@ -31,7 +31,7 @@ never spins or trades while the market is closed. Requires a machine that
 stays powered on and connected for the whole window.
 
 **GitHub Actions (recommended — no always-on host required):**
-`.github/workflows/agent.yml` runs on a 15-minute cron schedule, checks
+`.github/workflows/agent.yml` runs on a 5-minute cron schedule, checks
 `scripts/market_open_check.py` and skips the run entirely outside market
 hours, then runs `monitor_positions.py` followed by `run_agent.py`. The
 SQLite journal (`options_alpha.db`) is persisted between scheduled runs via

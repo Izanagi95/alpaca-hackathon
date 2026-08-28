@@ -2,13 +2,12 @@ name: Options Alpha Agent
 
 on:
   schedule:
-    # Every 15 minutes, offset from the hour/quarter-hour marks — GitHub's own
-    # docs note that schedules landing exactly on :00/:15/:30/:45 are the most
-    # likely to be delayed under load, since every scheduled workflow on the
-    # platform tends to pile up there. GitHub skips runs when the market is
-    # closed via the is-market-open step below rather than trying to encode
-    # NYSE hours/holidays in cron syntax.
-    - cron: "7,22,37,52 * * * *"
+    # Every 5 minutes, offset by 2 so it never lands exactly on :00/:15/:30/:45
+    # — GitHub's own docs note those marks are the busiest across the whole
+    # platform and the most likely to delay a scheduled run. GitHub skips
+    # runs when the market is closed via the is-market-open step below rather
+    # than trying to encode NYSE hours/holidays in cron syntax.
+    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
   workflow_dispatch: {}
 
 concurrency:
