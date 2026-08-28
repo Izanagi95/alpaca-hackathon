@@ -1,0 +1,78 @@
+name: Options Alpha Agent
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub skips runs when the market is closed via the
+    # is-market-open step below rather than trying to encode NYSE hours/
+    # holidays in cron syntax.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: options-alpha-agent
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_PAPER: "true"
+      PAPER_TRADING_ONLY: "true"
+      DRY_RUN: ${{ vars.DRY_RUN || 'true' }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
+      AI_PROVIDER: ${{ vars.AI_PROVIDER || 'none' }}
+      AI_MODEL: ${{ vars.AI_MODEL || 'claude-sonnet-5' }}
+      WATCHLIST: ${{ vars.WATCHLIST || 'AAPL,MSFT,SPY' }}
+      MAX_PORTFOLIO_RISK: ${{ vars.MAX_PORTFOLIO_RISK || '0.05' }}
+      MAX_POSITION_RISK: ${{ vars.MAX_POSITION_RISK || '0.01' }}
+      MAX_DAILY_LOSS: ${{ vars.MAX_DAILY_LOSS || '0.02' }}
+      MAX_OPEN_POSITIONS: ${{ vars.MAX_OPEN_POSITIONS || '8' }}
+      MIN_DTE: ${{ vars.MIN_DTE || '21' }}
+      MAX_DTE: ${{ vars.MAX_DTE || '45' }}
+      MIN_OPEN_INTEREST: ${{ vars.MIN_OPEN_INTEREST || '500' }}
+      MAX_BID_ASK_SPREAD: ${{ vars.MAX_BID_ASK_SPREAD || '0.15' }}
+      MIN_CREDIT: ${{ vars.MIN_CREDIT || '0.25' }}
+      MIN_VOLUME: ${{ vars.MIN_VOLUME || '50' }}
+      MIN_AI_SCORE: ${{ vars.MIN_AI_SCORE || '75' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore trade journal
+        uses: actions/cache/restore@v4
+        with:
+          path: options_alpha.db
+          key: options-alpha-db-${{ github.run_id }}
+          restore-keys: |
+            options-alpha-db-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check market hours
+        id: clock
+        run: |
+          value=$(python scripts/market_open_check.py)
+          echo "is_open=$value" >> "$GITHUB_OUTPUT"
+
+      - name: Monitor open positions
+        if: steps.clock.outputs.is_open == 'true'
+        run: python scripts/monitor_positions.py
+
+      - name: Scan for new candidates
+        if: steps.clock.outputs.is_open == 'true'
+        run: python scripts/run_agent.py
+
+      - name: Save trade journal
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: options_alpha.db
+          key: options-alpha-db-${{ github.run_id }}

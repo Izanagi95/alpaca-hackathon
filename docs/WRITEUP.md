@@ -1,0 +1,80 @@
+# Options Alpha Agent — one-page write-up
+
+## What it is
+
+An autonomous, paper-trading-only agent that trades defined-risk **Bull Put
+Spreads** on Alpaca. It scans liquid underlyings, scores candidates
+quantitatively, asks an LLM for a structured second opinion, and executes
+only what a deterministic Risk Engine approves — with automatic position
+sizing, configurable exit rules, and a full audit trail of why every trade
+was approved or rejected.
+
+## Why the architecture is safe by design
+
+The single rule the system is built around: **the LLM proposes, it never
+decides.** `AIDecisionLayer` returns a Pydantic-validated `AIProposal`
+(decision, score, confidence, rationale, risk flags) or, on any invalid or
+missing response, a forced `REJECT`. That proposal then passes through
+`RiskEngine.evaluate()` — a pure function with no LLM involvement — which
+independently checks paper mode, DTE window, minimum credit, liquidity
+(bid/ask spread, open interest, volume), defined-risk (no naked/unlimited
+exposure), daily loss circuit breaker, portfolio risk, duplicate exposure,
+open-position count, AI score threshold, and computes contract sizing from
+account equity (`floor(risk_dollars / max_loss_per_contract)`, never
+hardcoded). `OrderManager` re-checks the risk decision a second time before
+constructing an order and refuses to run outside paper mode. There is no
+code path from an AI response directly to `submit_order`.
+
+## Alpaca integration
+
+Built on `alpaca-py`: `TradingClient` (paper=True, hardcoded, not
+env-toggleable at the client level), `OptionHistoricalDataClient` for
+option-chain/quote data, and multi-leg (`OrderClass.MLEG`) limit orders with
+`OptionLegRequest` legs (`sell_to_open` short put, `buy_to_open` long put) to
+submit the spread as one atomic unit. The official
+[Alpaca MCP Server](https://github.com/alpacahq/alpaca-mcp-server) is wired
+in as a read-only query/demo path (`scripts/mcp_read_only_demo.py`),
+callable from any MCP client for natural-language account and option-chain
+inspection, while the headless autonomous loop always uses direct
+`alpaca-py` calls so the Risk Engine gate can't be affected by anything
+happening on the MCP side.
+
+## AI methodology
+
+The AI Analyst receives a fully structured JSON payload (underlying price,
+trend, realized/implied volatility, market regime, and the specific option
+leg data) — never raw HTML or free text — and must return output matching a
+strict Pydantic schema. It is not asked to "predict the market"; it's a
+decision-support layer over quantitative inputs that are computed
+deterministically upstream by the scoring module. Every proposal, valid or
+rejected, is journaled with its full rationale.
+
+## Risk methodology
+
+All risk parameters are environment-configurable (`MAX_PORTFOLIO_RISK`,
+`MAX_POSITION_RISK`, `MAX_DAILY_LOSS`, `MAX_OPEN_POSITIONS`, `MIN_DTE`/
+`MAX_DTE`, `MIN_OPEN_INTEREST`, `MAX_BID_ASK_SPREAD`, `MIN_AI_SCORE`, exit
+fractions) — nothing risk-relevant is hardcoded. Exit rules (profit target,
+stop loss, time exit, regime exit) run continuously via
+`scripts/monitor_positions.py`, so positions are never held to expiration by
+default. **Known, documented limitation:** there is no earnings/event-risk
+gate — Alpaca does not expose a reliable earnings calendar, and rather than
+fake this check it is left out and called out explicitly.
+
+## Explainability
+
+Every candidate the agent ever evaluates — approved or rejected — is written
+to the `decisions` table with its market/option inputs, AI proposal,
+rationale, and the itemized risk-engine checks that passed or failed. Every
+order actually submitted is separately tracked in `trades` from open to
+close, with exit reason and realized P&L. The dashboard
+(`app/dashboard/app.py`) surfaces both tables plus aggregate scan/approve/
+reject counts.
+
+## Status
+
+27+ automated tests cover position sizing, max-loss calculation, every risk
+gate, invalid-AI-output handling, liquidity rejection, daily-loss limits,
+duplicate-position handling, and exit conditions. `DRY_RUN=true` by default;
+paper trading is enforced at two separate points before any order can be
+submitted.

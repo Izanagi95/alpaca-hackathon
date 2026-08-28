@@ -1,0 +1,126 @@
+"""Concrete AI providers: send a candidate to an LLM and return its raw
+structured response. This is the only place that talks to an LLM. The
+response is untrusted until `AIDecisionLayer.analyze` validates it against
+the `AIProposal` schema — these functions must never be treated as a
+decision by themselves.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable, Mapping
+from typing import Any
+
+from app.config.settings import Settings
+
+try:
+    from anthropic import Anthropic
+except ImportError:  # pragma: no cover - exercised only when the package is missing
+    Anthropic = None  # type: ignore[assignment,misc]
+
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - exercised only when the package is missing
+    OpenAI = None  # type: ignore[assignment,misc]
+
+_TOOL_SCHEMA = {
+    "name": "submit_options_proposal",
+    "description": "Submit a structured evaluation of a Bull Put Spread candidate.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "decision": {"type": "string", "enum": ["APPROVE", "REJECT"]},
+            "score": {"type": "integer", "minimum": 0, "maximum": 100},
+            "strategy": {"type": "string", "enum": ["bull_put_spread"]},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "rationale": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            "risk_flags": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["decision", "score", "strategy", "confidence", "rationale", "risk_flags"],
+    },
+}
+
+_SYSTEM_PROMPT = (
+    "You are a consultative options analyst. You are given structured, verified market and "
+    "option data for one Bull Put Spread candidate. You do not predict the market or invent "
+    "probabilities. Evaluate only the given fields (trend, realized/implied volatility, market "
+    "regime, strikes, delta, credit, liquidity) and decide whether this specific candidate looks "
+    "attractive on defined-risk, income-oriented grounds. Your output is advisory only: a separate "
+    "deterministic risk engine makes the final call and can reject your APPROVE. Always call the "
+    "submit_options_proposal tool with your answer; never reply in plain text."
+)
+
+
+def build_anthropic_provider(settings: Settings) -> Callable[[dict[str, Any]], Mapping[str, Any]]:
+    """Returns a callable compatible with AIDecisionLayer's provider signature."""
+    if Anthropic is None:
+        raise RuntimeError("the 'anthropic' package is not installed")
+    if not settings.anthropic_api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY is required to build the Anthropic AI provider")
+
+    client = Anthropic(api_key=settings.anthropic_api_key)
+
+    def provider(candidate_payload: dict[str, Any]) -> Mapping[str, Any]:
+        response = client.messages.create(
+            model=settings.ai_model,
+            max_tokens=1024,
+            system=_SYSTEM_PROMPT,
+            tools=[_TOOL_SCHEMA],
+            tool_choice={"type": "tool", "name": "submit_options_proposal"},
+            messages=[{"role": "user", "content": _format_candidate(candidate_payload)}],
+        )
+        for block in response.content:
+            if getattr(block, "type", None) == "tool_use" and block.name == "submit_options_proposal":
+                return block.input
+        raise RuntimeError("Anthropic response did not include a submit_options_proposal tool call")
+
+    return provider
+
+
+_JSON_SYSTEM_PROMPT = (
+    _SYSTEM_PROMPT
+    + " Respond with ONLY a single JSON object — no markdown code fences, no explanation before or "
+    "after it — with exactly these keys: decision (\"APPROVE\" or \"REJECT\"), score (integer 0-100), "
+    "strategy (must be \"bull_put_spread\"), confidence (number 0-1), rationale (a non-empty array of "
+    "short strings), risk_flags (an array of short strings, possibly empty)."
+)
+
+
+def build_featherless_provider(settings: Settings) -> Callable[[dict[str, Any]], Mapping[str, Any]]:
+    """Featherless.ai hosts many different open-weight models behind an OpenAI-compatible
+    API; native tool-calling support varies by model, so this provider asks for plain JSON
+    in the response text instead of relying on a tool call. AIDecisionLayer still validates
+    the result against the same strict schema — malformed JSON becomes a forced REJECT."""
+    if OpenAI is None:
+        raise RuntimeError("the 'openai' package is not installed")
+    if not settings.featherless_api_key:
+        raise RuntimeError("FEATHERLESS_API_KEY is required to build the Featherless AI provider")
+
+    client = OpenAI(api_key=settings.featherless_api_key, base_url=settings.featherless_base_url)
+
+    def provider(candidate_payload: dict[str, Any]) -> Mapping[str, Any]:
+        response = client.chat.completions.create(
+            model=settings.ai_model,
+            max_tokens=1024,
+            messages=[
+                {"role": "system", "content": _JSON_SYSTEM_PROMPT},
+                {"role": "user", "content": _format_candidate(candidate_payload)},
+            ],
+        )
+        content = response.choices[0].message.content or ""
+        return json.loads(_strip_code_fence(content))
+
+    return provider
+
+
+def _strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.split("\n", 1)[1] if "\n" in stripped else stripped
+        if stripped.endswith("```"):
+            stripped = stripped[: -3]
+    return stripped.strip()
+
+
+def _format_candidate(candidate_payload: dict[str, Any]) -> str:
+    return "Evaluate this Bull Put Spread candidate:\n" + json.dumps(candidate_payload, indent=2, default=str)

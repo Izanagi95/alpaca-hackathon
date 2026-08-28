@@ -1,0 +1,98 @@
+# Demo script (3-5 minutes)
+
+Goal: show the full story — market detected -> opportunity found -> AI
+analyzed it -> risk engine approved it -> Alpaca executed it -> agent
+monitored it -> agent exited -> P&L recorded — and prove every trade (or
+rejection) is explainable.
+
+Setup beforehand (not part of the timed demo):
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+# fill in paper ALPACA_API_KEY / ALPACA_SECRET_KEY in .env
+pytest -q
+```
+
+## 0:00 - 0:30 — Framing
+
+"This is Options Alpha Agent: an autonomous paper-trading agent that trades
+Bull Put Spreads. The one rule the whole system is built around: the AI can
+analyze and propose, but a deterministic Risk Engine is the only thing that
+can approve a trade. Everything runs against a $100,000 Alpaca **paper**
+account — no real capital, ever."
+
+Show `.env`: `PAPER_TRADING_ONLY=true`, `ALPACA_PAPER=true`.
+
+## 0:30 - 1:15 — Read-only integration + MCP
+
+```powershell
+.\.venv\Scripts\python.exe scripts\integration_check.py
+```
+
+"This confirms we're really talking to Alpaca paper: account status, live
+stock quotes, real option contracts, real option quotes." Point at
+`READ-ONLY INTEGRATION CHECK PASSED`.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\mcp_read_only_demo.py
+```
+
+"And this is the official Alpaca MCP Server — the same server you could
+point Claude Desktop or Cursor at and ask 'what's my paper account balance'
+in plain English. It lists the tools it exposes and calls two read-only
+ones: account info and an option chain lookup."
+
+## 1:15 - 2:30 — One trade end to end
+
+Run (or reference) the workflow test / a small driver script that builds one
+candidate, runs `TradeWorkflow.evaluate`, and prints the result — or walk
+through `tests/test_workflow.py` live:
+
+"Here's one Bull Put Spread candidate on AAPL. It goes through: scoring
+(market regime, trend, volatility, liquidity, risk/reward — all numeric, no
+LLM), then the AI Analyst, which returns a structured, Pydantic-validated
+proposal — score, confidence, rationale, risk flags. If that JSON is
+malformed or missing, we hard-reject; we never guess."
+
+"Now the Risk Engine: paper mode, DTE window, minimum credit, bid/ask
+spread, open interest, volume, defined-risk check, daily loss circuit
+breaker, portfolio risk, duplicate exposure, position count, AI score
+threshold — and automatic position sizing from account equity, not a
+hardcoded number of contracts."
+
+Show the approved result: `execution.submitted == True`, and — with
+`DRY_RUN=true` — that no real order was placed, just a simulated one.
+
+## 2:30 - 3:15 — Monitoring and exit
+
+```powershell
+.\.venv\Scripts\python.exe scripts\monitor_positions.py
+```
+
+"This is the position manager loop: for every open trade it fetches a live
+quote, checks profit target / stop loss / days-to-expiration / regime, and —
+if a rule fires — closes the spread and journals the realized P&L. It never
+holds to expiration by default, and if a quote isn't available it skips the
+position instead of guessing a fill price."
+
+## 3:15 - 4:15 — Dashboard: the "why"
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.dashboard.app:app --reload
+```
+
+Open `http://127.0.0.1:8000`. "Scanned / approved / rejected counts at the
+top. Below that, every open and closed position with entry credit, strikes,
+exit reason and realized P&L. And the decision journal — for literally every
+candidate we ever evaluated, approved or rejected, you can see the AI score
+and the exact rationale behind the call."
+
+## 4:15 - 5:00 — Close
+
+"Everything here is paper-only, fail-closed, and the LLM never has a direct
+line to `submit_order` — the Risk Engine is the only gate. That's the whole
+pitch: an AI that explains and proposes, and a deterministic engine that
+decides."
