@@ -227,6 +227,36 @@ rather than silently skipping AI evaluation.
   markdown code fence if the model adds one despite instructions not to).
   Malformed JSON is caught the same way any other invalid AI output is.
 
+## Simulated backtest (theoretical, not validated performance)
+
+`app/backtest/` reconstructs what the strategy's rules would have done using
+**real historical stock prices** (Alpaca daily bars) combined with a
+**Black-Scholes theoretical option price** — not real historical option
+quotes, which Alpaca's available historical options data does not go back
+far enough (nor carry the historical bid/ask, open interest or IV surface)
+to reconstruct honestly. Rather than fake a backtest against data we don't
+have, this is clearly labeled as a theoretical/simulated approximation: it
+reuses the actual production `calculate_contracts` and
+`PositionManager.evaluate_exit` code (so it at least validates the rule
+mechanics), but liquidity gates and the AI Analyst are not simulated at all.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_simulated_backtest.py 365
+```
+
+This is the "historical backtest" the hackathon FAQ allows as supporting
+evidence of the agent's guardrails — official scoring is still based
+entirely on the live paper account, never on this simulation.
+
+Exit rules are checked against real **5-minute intraday bars** within each
+trading day (not only the daily close), so a stop-loss is caught close to
+its configured threshold rather than only discovered — much worse than
+intended — after a full day's gap has already happened. An earlier version
+of this backtest checked exits once per day and materially overstated
+stop-loss losses for exactly that reason; this was caught by comparing the
+simulation's polling cadence against the live agent's actual 5-minute
+monitoring loop.
+
 ## MCP Server integration
 
 The autonomous trading loop (`app/agents/workflow.py`) always talks to Alpaca

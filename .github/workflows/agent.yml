@@ -26,7 +26,7 @@ jobs:
       FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
       AI_PROVIDER: ${{ vars.AI_PROVIDER || 'none' }}
       AI_MODEL: ${{ vars.AI_MODEL || 'claude-sonnet-5' }}
-      WATCHLIST: ${{ vars.WATCHLIST || 'AAPL,MSFT,SPY' }}
+      WATCHLIST: ${{ vars.WATCHLIST || 'AAPL,MSFT,SPY,QQQ,NVDA' }}
       MAX_PORTFOLIO_RISK: ${{ vars.MAX_PORTFOLIO_RISK || '0.05' }}
       MAX_POSITION_RISK: ${{ vars.MAX_POSITION_RISK || '0.01' }}
       MAX_DAILY_LOSS: ${{ vars.MAX_DAILY_LOSS || '0.02' }}
