@@ -29,6 +29,22 @@ class RiskEngine:
         self._settings = settings
 
     def evaluate(self, candidate: BullPutSpreadCandidate, context: RiskContext, ai_score: int) -> RiskDecision:
+        contracts, checks = self._deterministic_checks(candidate, context)
+        checks["ai_score"] = ai_score >= self._settings.min_ai_score
+        reasons = tuple(name for name, passed in checks.items() if not passed)
+        return RiskDecision(not reasons, contracts if not reasons else 0, checks, reasons)
+
+    def pre_screen(self, candidate: BullPutSpreadCandidate, context: RiskContext) -> RiskDecision:
+        """Every deterministic gate except the AI score. Lets callers skip the
+        (slow, costly) AI call entirely for a candidate that would be rejected
+        on liquidity, DTE, credit or sizing grounds regardless of what the AI
+        says — the AI is never the reason a candidate reaches execution, so
+        there is nothing lost by checking the cheaper gates first."""
+        contracts, checks = self._deterministic_checks(candidate, context)
+        reasons = tuple(name for name, passed in checks.items() if not passed)
+        return RiskDecision(not reasons, contracts if not reasons else 0, checks, reasons)
+
+    def _deterministic_checks(self, candidate: BullPutSpreadCandidate, context: RiskContext) -> tuple[int, dict[str, bool]]:
         contracts = calculate_contracts(
             context.equity,
             candidate.max_loss_per_contract,
@@ -46,8 +62,6 @@ class RiskEngine:
             "daily_loss": context.daily_pnl_fraction > -self._settings.max_daily_loss,
             "portfolio_risk": context.portfolio_risk_used + self._settings.max_position_risk <= self._settings.max_portfolio_risk,
             "duplicate_exposure": candidate.symbol not in context.open_symbols,
-            "ai_score": ai_score >= self._settings.min_ai_score,
             "sizing": contracts > 0,
         }
-        reasons = tuple(name for name, passed in checks.items() if not passed)
-        return RiskDecision(not reasons, contracts if not reasons else 0, checks, reasons)
+        return contracts, checks

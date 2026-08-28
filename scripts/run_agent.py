@@ -12,6 +12,7 @@ submitting anything:
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -111,6 +112,16 @@ def main() -> int:
             if result.risk_decision.approved:
                 approved += 1
                 print(f"APPROVED symbol={symbol} contracts={result.risk_decision.contracts} submitted={result.execution.submitted}")
+                # Reflect this approval immediately so a second candidate for the
+                # same symbol later in this same scan sees it as open exposure —
+                # RiskContext is otherwise only computed once, before the loop.
+                risk_used = float(candidate.max_loss_per_contract) * result.risk_decision.contracts / context.equity if context.equity else 0.0
+                context = dataclasses.replace(
+                    context,
+                    open_positions=context.open_positions + 1,
+                    open_symbols=context.open_symbols | {candidate.symbol},
+                    portfolio_risk_used=context.portfolio_risk_used + risk_used,
+                )
             else:
                 rejected += 1
                 print(f"REJECTED symbol={symbol} reasons={result.risk_decision.reasons}")
