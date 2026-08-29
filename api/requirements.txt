@@ -1,0 +1,11 @@
+# Slimmer than the root requirements.txt — only what the dashboard
+# (app/dashboard/app.py) actually imports, to stay well under Vercel's
+# serverless function size limit. Deliberately excludes anthropic, openai,
+# mcp: those are only used by the trading loop / AI providers, never
+# imported by the dashboard.
+fastapi>=0.115,<1
+alpaca-py>=0.43,<1
+sqlalchemy>=2.0,<3
+psycopg2-binary>=2.9,<3
+python-dotenv>=1.0,<2
+pydantic>=2.8,<3

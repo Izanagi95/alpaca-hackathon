@@ -104,6 +104,18 @@ an order) once credentials are in `.env`:
    `/api/decisions`, `/api/trades` and `/api/account` return the same data
    as JSON.
 
+   **Hosting it publicly (Vercel):** `api/index.py` re-exports the same
+   FastAPI `app` with no logic changes, and `vercel.json` routes every
+   request to it — Vercel's Python runtime supports ASGI apps natively, so
+   this is a thin entrypoint, not a rewrite. `api/requirements.txt` is a
+   slimmer dependency set (no `anthropic`/`openai`/`mcp`, which the
+   dashboard never imports) to stay under Vercel's function size limit. Set
+   `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ALPACA_PAPER=true`,
+   `PAPER_TRADING_ONLY=true` and `DATABASE_URL` as Vercel environment
+   variables — with `DATABASE_URL` pointing at the same Supabase database
+   the trading loop writes to, the hosted dashboard shows the live journal
+   with no separate sync step.
+
 Run the whole scan-to-decision loop once against real Alpaca data:
 
 ```powershell
