@@ -8,7 +8,12 @@ on:
     # runs when the market is closed via the is-market-open step below rather
     # than trying to encode NYSE hours/holidays in cron syntax.
     - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: "Run monitor/scan even if the market is closed (testing only; DRY_RUN still applies)"
+        type: boolean
+        default: false
 
 concurrency:
   group: options-alpha-agent
@@ -26,7 +31,7 @@ jobs:
       DRY_RUN: ${{ vars.DRY_RUN || 'true' }}
       FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
       AI_PROVIDER: ${{ vars.AI_PROVIDER || 'none' }}
-      AI_MODEL: ${{ vars.AI_MODEL || 'claude-sonnet-5' }}
+      AI_MODEL: ${{ vars.AI_MODEL || 'Qwen/Qwen3-30B-A3B-Instruct-2507' }}
       WATCHLIST: ${{ vars.WATCHLIST || 'AAPL,MSFT,SPY,QQQ,NVDA' }}
       MAX_PORTFOLIO_RISK: ${{ vars.MAX_PORTFOLIO_RISK || '0.05' }}
       MAX_POSITION_RISK: ${{ vars.MAX_POSITION_RISK || '0.01' }}
@@ -69,11 +74,11 @@ jobs:
           echo "is_open=$value" >> "$GITHUB_OUTPUT"
 
       - name: Monitor open positions
-        if: steps.clock.outputs.is_open == 'true'
+        if: steps.clock.outputs.is_open == 'true' || inputs.force_run == true
         run: python scripts/monitor_positions.py
 
       - name: Scan for new candidates
-        if: steps.clock.outputs.is_open == 'true'
+        if: steps.clock.outputs.is_open == 'true' || inputs.force_run == true
         run: python scripts/run_agent.py
 
       - name: Save trade journal
