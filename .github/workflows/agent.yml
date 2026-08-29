@@ -78,3 +78,12 @@ jobs:
         with:
           path: options_alpha.db
           key: options-alpha-db-${{ github.run_id }}
+
+      - name: Publish trade journal as a downloadable artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: options-alpha-db
+          path: options_alpha.db
+          retention-days: 14
+          if-no-files-found: ignore
