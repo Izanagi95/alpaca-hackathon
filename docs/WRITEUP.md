@@ -94,17 +94,23 @@ was verified against a real Supabase project, not just assumed to work:
 GitHub Actions writing 300+ real decision rows into it, queried back
 directly to confirm.
 
-## Public dashboard (optional)
+## Dashboard
 
-`api/index.py` re-exports the same FastAPI app with no logic changes, and
-`vercel.json` routes requests to it — Vercel's Python runtime supports ASGI
-apps natively. With `DATABASE_URL` set to the shared Supabase database, a
-Vercel-hosted dashboard shows the live journal with no separate sync step.
-Alpaca credentials are deliberately **not** required for this: the
-Portfolio section degrades to "unavailable" without them rather than
-handing a third-party host API keys it doesn't need — the dashboard never
-calls `submit_order`, so it never needed trading-capable credentials in the
-first place.
+Four pages behind a shared navbar — Overview, Daily KPIs, Positions &
+Trades, Decision Journal — each filterable by a real inclusive date range
+(native `<input type="date">`, no JavaScript) plus symbol/status/decision
+filters on the two journal pages, with per-page summary stats (matching
+count, win/loss, realized P&L, approval rate) instead of only raw tables.
+
+**Public hosting (optional):** `api/index.py` re-exports the same FastAPI
+app with no logic changes, and `vercel.json` routes requests to it —
+Vercel's Python runtime supports ASGI apps natively. With `DATABASE_URL`
+set to the shared Supabase database, a Vercel-hosted dashboard shows the
+live journal with no separate sync step. Alpaca credentials are
+deliberately **not** required for this: the Portfolio section degrades to
+"unavailable" without them rather than handing a third-party host API keys
+it doesn't need — the dashboard never calls `submit_order`, so it never
+needed trading-capable credentials in the first place.
 
 ## Simulated backtest (theoretical, not validated performance)
 
@@ -139,11 +145,16 @@ includes a `pgbouncer=true` parameter meant for other drivers (asyncpg/Prisma)
 that `psycopg2` doesn't recognize and rejects outright, and the Postgres
 schema selection initially lived as a Python constant before being moved
 into `DATABASE_URL` itself (`options=-c search_path=alpaca`) so it's visible
-and changeable from configuration, not buried in code.
+and changeable from configuration, not buried in code. Real usage of the
+dashboard surfaced one more: every page load was rebuilding the database
+engine from scratch — including a Postgres round trip to check/create the
+schema and tables — instead of reusing one, making every navigation
+noticeably slow; fixed by caching the engine per connection URL so that
+bootstrap only runs once per process.
 
 ## Status
 
-63+ automated tests cover position sizing, max-loss calculation, every risk
+70+ automated tests cover position sizing, max-loss calculation, every risk
 gate, invalid-AI-output handling, liquidity rejection, daily-loss limits,
 duplicate-position handling, exit conditions, the options scanner, the
 simulated backtest, and both the SQLite and URL-parsing paths of the shared

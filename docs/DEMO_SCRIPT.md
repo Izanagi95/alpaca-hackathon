@@ -85,11 +85,12 @@ position instead of guessing a fill price."
 .\.venv\Scripts\python.exe -m uvicorn app.dashboard.app:app --reload
 ```
 
-Open `http://127.0.0.1:8000`. "Scanned / approved / rejected counts at the
-top. Below that, every open and closed position with entry credit, strikes,
-exit reason and realized P&L. And the decision journal — for literally every
+Open `http://127.0.0.1:8000`. "Four pages: Overview, Daily KPIs, Positions &
+Trades, Decision Journal. Every position with entry credit, strikes, exit
+reason and realized P&L. The decision journal — for literally every
 candidate we ever evaluated, approved or rejected, you can see the AI score
-and the exact rationale behind the call."
+and the exact rationale behind the call. And every page filters by a real
+date range, symbol, or decision — not just 'last N rows'."
 
 "This same journal lives in Supabase, not just a local file — GitHub
 Actions, this local dashboard, and an optional public copy hosted on Vercel

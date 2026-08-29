@@ -239,6 +239,22 @@ principle (every decision is meant to be reconstructable) rather than as a
 leak to prevent, precisely because the content was checked and contains no
 credentials — only strikes, credit, AI scores and rationale.
 
+## Dashboard
+
+Four pages behind a shared navbar (Overview, Daily KPIs, Positions &
+Trades, Decision Journal), each with a real inclusive date-range filter
+(`start`/`end` query params compared directly against the ISO8601
+timestamp columns — native `<input type="date">`, no JavaScript) rather
+than "last N rows", plus symbol/status/decision filters and per-page
+summary stats. `DecisionRepository`'s engine is cached per connection URL
+(`_build_engine`, `functools.lru_cache`) instead of being rebuilt on every
+request — rebuilding included a Postgres round trip to check/create the
+schema and tables every time, which was the main source of the perceptible
+slowness before this was found and fixed. `DecisionRepository.close()` is
+now a no-op for the same reason: the engine is shared across every
+instance built from the same URL, so disposing it per-call would break the
+next request/instance still using it.
+
 ## Hosted dashboard (optional)
 
 `app/dashboard/app.py` is unchanged between environments — `api/index.py`
