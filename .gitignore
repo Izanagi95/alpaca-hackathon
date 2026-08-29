@@ -10,3 +10,6 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+
+# Personal operational notes, not a hackathon deliverable — not meant for judges.
+docs/PRIMA_DI_LUNEDI.md

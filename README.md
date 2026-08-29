@@ -50,10 +50,8 @@ enable it:
    repository inactivity, well outside this event's window).
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full pipeline diagram,
-[docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) for a 3-5 minute walkthrough,
-[docs/WRITEUP.md](docs/WRITEUP.md) for the one-page hackathon summary, and
-[docs/PRIMA_DI_LUNEDI.md](docs/PRIMA_DI_LUNEDI.md) for the pre-competition
-checklist (new official paper account, credential swap, journal reset).
+[docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) for a 3-5 minute walkthrough, and
+[docs/WRITEUP.md](docs/WRITEUP.md) for the one-page hackathon summary.
 
 ## Phase 2 status
 
