@@ -49,6 +49,22 @@ decision-support layer over quantitative inputs that are computed
 deterministically upstream by the scoring module. Every proposal, valid or
 rejected, is journaled with its full rationale.
 
+Two interchangeable providers are supported (`AI_PROVIDER`): **Anthropic**
+(forced tool call, so the model can't reply with free text) and
+**Featherless.ai** (an OpenAI-compatible host for open-weight models —
+currently configured with `Qwen/Qwen3-30B-A3B-Instruct-2507`, a non-reasoning
+MoE variant chosen specifically so responses are plain JSON with no
+`<think>` preamble to strip). Either way, the raw output is validated by the
+same Pydantic schema before it can influence anything — a malformed response
+from either provider becomes a forced `REJECT`.
+
+To keep the AI cost/latency bounded at scale, `TradeWorkflow` runs a
+`RiskEngine.pre_screen()` pass first and skips the AI call entirely for a
+candidate that already fails a deterministic gate (liquidity, DTE, credit,
+sizing) — discovered necessary after a live run against ~200 real candidates
+timed out calling the AI on every one of them, most of which could never
+have been approved regardless of the AI's opinion.
+
 ## Risk methodology
 
 All risk parameters are environment-configurable (`MAX_PORTFOLIO_RISK`,
@@ -71,10 +87,39 @@ close, with exit reason and realized P&L. The dashboard
 (`app/dashboard/app.py`) surfaces both tables plus aggregate scan/approve/
 reject counts.
 
+## Simulated backtest (theoretical, not validated performance)
+
+Alpaca's available historical options data isn't deep enough to replay real
+past option quotes, so rather than fake that, `app/backtest/` reconstructs
+option prices with Black-Scholes over **real historical stock prices**,
+reusing the actual production sizing and exit-rule code. It's labeled
+theoretical everywhere it appears and is never used as evidence of expected
+performance — only of the rule mechanics behaving sanely. Exit checks run
+against real 5-minute intraday bars, not just the daily close, specifically
+because an earlier daily-only version materially overstated stop-loss losses
+whenever the underlying gapped intraday — a discrepancy only visible once
+the simulation's checking cadence was compared against the live agent's.
+
+## Validated by live testing, not just unit tests
+
+Two real defects were found by actually running the agent against a live
+paper account and a live AI provider, not by unit tests alone: the AI was
+being called on every scanned candidate even when a cheaper deterministic
+gate had already failed it (fixed by pre-screening before the AI call), and
+`duplicate_exposure` was computed once before a scan instead of per
+candidate, letting multiple positions open on the same underlying within one
+run (fixed by updating the risk context in-memory after each approval). A
+separate infrastructure issue surfaced running the agent continuously:
+GitHub Actions' native `schedule:` trigger fired unreliably (one run in
+several hours) despite a valid 5-minute cron, so the production trigger is
+an external scheduler (cron-job.org) calling the workflow's `workflow_dispatch`
+API — GitHub's own `schedule:` is kept only as a redundant backup.
+
 ## Status
 
-27+ automated tests cover position sizing, max-loss calculation, every risk
+55+ automated tests cover position sizing, max-loss calculation, every risk
 gate, invalid-AI-output handling, liquidity rejection, daily-loss limits,
-duplicate-position handling, and exit conditions. `DRY_RUN=true` by default;
+duplicate-position handling, exit conditions, both AI providers, the
+options scanner, and the simulated backtest. `DRY_RUN=true` by default;
 paper trading is enforced at two separate points before any order can be
 submitted.

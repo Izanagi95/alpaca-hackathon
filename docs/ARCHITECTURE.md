@@ -132,6 +132,34 @@ fit for interactive/demo use, not for a headless scheduled agent, and keeping
 execution on direct `alpaca-py` calls means the Risk Engine gate cannot be
 bypassed by anything the MCP client does or doesn't do.
 
+## Production scheduling
+
+The autonomous loop needs to run continuously across the multi-day scoring
+window. GitHub Actions' native `schedule:` cron trigger proved unreliable in
+practice — a valid 5-minute cron fired only once across several hours, a
+known platform limitation (GitHub does not guarantee schedule frequency,
+especially at short intervals on low-traffic repos). The actual trigger in
+production is an **external scheduler (cron-job.org)** calling the
+workflow's `workflow_dispatch` REST endpoint every 5 minutes with a scoped
+GitHub token; GitHub's own `schedule:` entry is left in the workflow only as
+a redundant backup, not the primary mechanism.
+
+```
+cron-job.org (real 5-min timer)
+        |
+        v  POST /repos/.../actions/workflows/agent.yml/dispatches
+GitHub Actions runner (ubuntu-latest, ephemeral)
+        |
+        v
+market_open_check.py --> skip if closed
+        |
+        v
+monitor_positions.py  ->  run_agent.py
+        |
+        v
+options_alpha.db persisted via actions/cache between runs
+```
+
 ## Data model
 
 - **decisions** — every candidate ever evaluated: market inputs, option
@@ -147,6 +175,7 @@ bypassed by anything the MCP client does or doesn't do.
 |---|---|
 | Alpaca API error / timeout | Exception propagates, no order attempted |
 | Incomplete market/option data | Candidate not built, or `defined_risk`/`liquidity` gates reject it |
-| AI unavailable or returns invalid JSON | `AIDecisionLayer.analyze` catches the error and returns a forced `REJECT` with `invalid_ai_output` flag |
+| AI unavailable or returns invalid JSON (either provider) | `AIDecisionLayer.analyze` catches the error and returns a forced `REJECT` with `invalid_ai_output` flag |
+| Candidate already fails a deterministic gate | `RiskEngine.pre_screen()` rejects it before the AI is ever called — saves cost/latency, never affects the outcome |
 | Live quote unavailable during monitoring | `monitor_positions.py` skips the position rather than guessing a price |
 | Paper mode misconfigured | `Settings.require_paper_mode()` raises at startup; `OrderManager` re-checks before every submit |

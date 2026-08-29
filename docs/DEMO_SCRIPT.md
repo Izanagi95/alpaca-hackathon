@@ -90,7 +90,23 @@ exit reason and realized P&L. And the decision journal — for literally every
 candidate we ever evaluated, approved or rejected, you can see the AI score
 and the exact rationale behind the call."
 
-## 4:15 - 5:00 — Close
+## 4:15 - 4:45 — Two bugs live testing actually found
+
+"Unit tests can't catch everything. Running this against a real paper
+account with the AI actually connected surfaced two real bugs: the AI was
+being called on every single candidate, even ones a cheap deterministic
+check had already ruled out — timing us out scanning 200 real candidates.
+And a risk check for 'don't open two positions on the same underlying' was
+only computed once per scan instead of per candidate, letting three
+positions open on the same symbol in one run. Both are fixed now, and both
+were only found by actually running it, not by writing more unit tests."
+
+If time allows, mention the scheduling lesson too: "We also found GitHub
+Actions' own cron scheduler doesn't reliably fire every 5 minutes — one run
+in several hours — so the agent is actually triggered by an external
+scheduler instead."
+
+## 4:45 - 5:00 — Close
 
 "Everything here is paper-only, fail-closed, and the LLM never has a direct
 line to `submit_order` — the Risk Engine is the only gate. That's the whole
