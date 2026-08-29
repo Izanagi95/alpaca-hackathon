@@ -19,7 +19,7 @@ def test_search_path_schema_none_when_absent() -> None:
 
 
 def test_search_path_schema_none_for_sqlite() -> None:
-    assert _search_path_schema("sqlite:///options_alpha.db") is None
+    assert _search_path_schema("sqlite:///riskgate.db") is None
 
 
 def test_bare_path_becomes_a_local_sqlite_url(tmp_path) -> None:

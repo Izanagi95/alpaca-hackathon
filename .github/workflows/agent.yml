@@ -16,7 +16,7 @@ on:
         default: false
 
 concurrency:
-  group: options-alpha-agent
+  group: riskgate-agent
   cancel-in-progress: false
 
 jobs:
@@ -54,15 +54,15 @@ jobs:
 
       # The cache/save/artifact steps below only apply when DATABASE_URL is
       # unset (local SQLite fallback) — with DATABASE_URL pointing at
-      # Supabase, no local options_alpha.db file is ever created, so these
+      # Supabase, no local riskgate.db file is ever created, so these
       # steps harmlessly find nothing to restore/save/publish.
       - name: Restore trade journal
         uses: actions/cache/restore@v4
         with:
-          path: options_alpha.db
-          key: options-alpha-db-${{ github.run_id }}
+          path: riskgate.db
+          key: riskgate-db-${{ github.run_id }}
           restore-keys: |
-            options-alpha-db-
+            riskgate-db-
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -85,14 +85,14 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: options_alpha.db
-          key: options-alpha-db-${{ github.run_id }}
+          path: riskgate.db
+          key: riskgate-db-${{ github.run_id }}
 
       - name: Publish trade journal as a downloadable artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: options-alpha-db
-          path: options_alpha.db
+          name: riskgate-db
+          path: riskgate.db
           retention-days: 14
           if-no-files-found: ignore

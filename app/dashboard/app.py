@@ -15,7 +15,7 @@ from app.database.repository import DecisionRepository
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "options_alpha.db"))
+DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "riskgate.db"))
 ACCOUNT_FETCH_TIMEOUT_SECONDS = 5.0
 ACCOUNT_CACHE_TTL_SECONDS = 10.0
 app = FastAPI(title="Riskgate")

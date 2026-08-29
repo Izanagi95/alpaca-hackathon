@@ -87,7 +87,7 @@ def main() -> int:
         "confidence": 0.80, "rationale": ["paper mleg integration verification"], "risk_flags": [],
     }).analyze(candidate)
     risk = RiskEngine(settings).evaluate(candidate, RiskContext(float(account.equity), 0, 0), proposal.score)
-    journal = DecisionRepository(PROJECT_ROOT / "options_alpha.db")
+    journal = DecisionRepository(PROJECT_ROOT / "riskgate.db")
     try:
         journal.record(candidate, proposal, risk)
         if not risk.approved:

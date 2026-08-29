@@ -46,7 +46,7 @@ def main() -> int:
     settings = Settings.from_env(PROJECT_ROOT / ".env")
     settings.require_paper_mode()
 
-    journal = DecisionRepository(settings.database_url or PROJECT_ROOT / "options_alpha.db")
+    journal = DecisionRepository(settings.database_url or PROJECT_ROOT / "riskgate.db")
     position_manager = PositionManager(settings)
     clients = None
     if not settings.dry_run:

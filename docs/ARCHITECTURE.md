@@ -157,7 +157,7 @@ market_open_check.py --> skip if closed
 monitor_positions.py  ->  run_agent.py
         |
         v
-options_alpha.db persisted via actions/cache between runs
+riskgate.db persisted via actions/cache between runs
 ```
 
 **Token exposure risk, and its mitigation:** cron-job.org must hold the
@@ -221,7 +221,7 @@ replacing the artifact-download workflow below with just querying the live
 database directly.
 
 **Publishing the journal as an artifact.** The workflow uploads
-`options_alpha.db` as a downloadable GitHub Actions artifact (in addition
+`riskgate.db` as a downloadable GitHub Actions artifact (in addition
 to the `actions/cache` copy used to persist it between runs), so the real
 journal produced by the official run can be pulled locally
 (`gh run download`) and inspected with the same dashboard used in

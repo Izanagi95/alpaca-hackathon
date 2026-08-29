@@ -7,7 +7,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./options_alpha.db:/app/options_alpha.db
+      - ./riskgate.db:/app/riskgate.db
 
   monitor:
     build: .
@@ -15,6 +15,6 @@ services:
     env_file:
       - .env
     volumes:
-      - ./options_alpha.db:/app/options_alpha.db
+      - ./riskgate.db:/app/riskgate.db
     depends_on:
       - dashboard

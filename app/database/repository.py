@@ -127,7 +127,7 @@ class DecisionRepository:
     to know the name, so it's parsed back out of the same URL.
     """
 
-    def __init__(self, database_url: str | Path = "options_alpha.db") -> None:
+    def __init__(self, database_url: str | Path = "riskgate.db") -> None:
         url = str(database_url)
         if "://" not in url:
             url = f"sqlite:///{url}"
