@@ -172,16 +172,24 @@ _CSS = """
 }
 *{box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
-  background:var(--bg);color:var(--text);margin:0;padding:32px 40px 64px;line-height:1.45}
-main{max-width:1180px;margin:0 auto}
-header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;
-  padding-bottom:24px;margin-bottom:8px;border-bottom:1px solid var(--border)}
-header h1{margin:0;font-size:26px;letter-spacing:-.02em}
-header p{margin:6px 0 0;color:var(--text-muted);font-size:14px}
+  background:var(--bg);color:var(--text);margin:0;padding:0 0 64px;line-height:1.45}
+main{max-width:1180px;margin:0 auto;padding:0 40px}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);margin-bottom:32px}
+.topbar-inner{max-width:1180px;margin:0 auto;padding:20px 40px 0}
+.topbar header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;
+  padding-bottom:20px}
+header h1{margin:0;font-size:24px;letter-spacing:-.02em}
+header p{margin:6px 0 0;color:var(--text-muted);font-size:13.5px}
 .badge-live{background:var(--accent);color:white;padding:8px 14px;border-radius:999px;
   font-weight:600;font-size:12.5px;letter-spacing:.02em;white-space:nowrap}
+nav.tabs{display:flex;gap:4px}
+nav.tabs a{display:inline-block;padding:11px 6px;margin-right:22px;color:var(--text-muted);
+  text-decoration:none;font-size:14px;font-weight:600;border-bottom:2px solid transparent}
+nav.tabs a.active{color:var(--accent);border-bottom-color:var(--accent)}
+nav.tabs a:hover:not(.active){color:var(--text)}
 h2{font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);
-  margin:40px 0 14px;display:flex;align-items:center;gap:16px;font-weight:700}
+  margin:0 0 14px;display:flex;align-items:center;gap:16px;font-weight:700}
+h2:not(:first-child){margin-top:40px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
 .stat{background:var(--surface);padding:18px 20px;border-radius:var(--radius);
   box-shadow:var(--shadow);border:1px solid var(--border-soft)}
@@ -196,7 +204,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--text
 .day-filters a.active{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .day-filters a:hover:not(.active){color:var(--text)}
 .card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);
-  border:1px solid var(--border-soft);overflow:hidden}
+  border:1px solid var(--border-soft);overflow:hidden;overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
 th{text-align:left;padding:11px 16px;background:var(--border-soft);color:var(--text-muted);
   font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
@@ -215,32 +223,99 @@ tbody tr:hover{background:var(--bg)}
 .empty-state{padding:32px 16px;text-align:center;color:var(--text-muted)}
 """
 
+_NAV_ITEMS = [
+    ("/", "Overview"),
+    ("/kpis", "Daily KPIs"),
+    ("/trades", "Positions & Trades"),
+    ("/decisions", "Decision Journal"),
+]
+
+
+def _page(title: str, active_path: str, body: str) -> str:
+    nav_links = "".join(
+        f'<a href="{path}"{" class=\"active\"" if path == active_path else ""}>{label}</a>'
+        for path, label in _NAV_ITEMS
+    )
+    return f"""<!doctype html>
+<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Options Alpha Agent — {title}</title>
+<style>{_CSS}</style></head>
+<body>
+<div class="topbar"><div class="topbar-inner">
+  <header>
+    <div><h1>Options Alpha Agent</h1><p>Autonomous Bull Put Spread agent — decision journal and trade log</p></div>
+    <span class="badge-live">PAPER TRADING MODE — NO REAL CAPITAL</span>
+  </header>
+  <nav class="tabs">{nav_links}</nav>
+</div></div>
+<main>{body}
+</main></body></html>"""
+
+
+def _portfolio_stats_html() -> str:
+    account_data = account_snapshot()
+    if account_data is not None:
+        pnl_class = "pnl-positive" if account_data["daily_pnl"] >= 0 else "pnl-negative"
+        sign = "+" if account_data["daily_pnl"] >= 0 else ""
+        return f"""
+  <div class="stat"><div class="label">Equity</div><b>${account_data['equity']:,.2f}</b></div>
+  <div class="stat"><div class="label">Cash</div><b>${account_data['cash']:,.2f}</b></div>
+  <div class="stat"><div class="label">Buying power</div><b>${account_data['buying_power']:,.2f}</b></div>
+  <div class="stat"><div class="label">Daily P&amp;L</div><b class="{pnl_class}">{sign}${account_data['daily_pnl']:,.2f} ({account_data['daily_pnl_pct']:+.2f}%)</b></div>"""
+    return '\n  <div class="stat"><div class="label">Portfolio</div><b class="muted">unavailable</b></div>'
+
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard(days: int = Query(default=14, ge=1, le=365)) -> str:
+def overview_page() -> str:
     decision_rows = recent_decisions()
     approved = sum(1 for d in decision_rows if d["final_decision"] == "APPROVE")
     rejected = len(decision_rows) - approved
 
-    rows = []
-    for decision in decision_rows:
-        proposal = json.loads(str(decision["ai_decision"]))
-        risk_flags = proposal.get("risk_flags", [])
-        ai_not_consulted = "ai_skipped_deterministic_reject" in risk_flags
-        ai_score_display = '<span class="muted">not consulted</span>' if ai_not_consulted else f"<b>{proposal.get('score', 0)}</b>"
-        rows.append(
-            "<tr><td>{timestamp}</td><td><b>{symbol}</b></td><td>{ai}</td><td>{final}</td>"
-            "<td class=\"muted\">{reason}</td><td class=\"rationale-cell\">{why}</td></tr>".format(
-                timestamp=_format_ts(decision["timestamp"]),
-                symbol=decision["symbol"],
-                ai=ai_score_display,
-                final=_decision_badge(str(decision["final_decision"])),
-                reason=_escape(", ".join(risk_flags) or "none"),
-                why=_escape(", ".join(proposal.get("rationale", []))),
+    body = f"""
+<h2>Portfolio</h2>
+<div class="stats">{_portfolio_stats_html()}
+</div>
+
+<h2>Agent activity</h2>
+<div class="stats">
+  <div class="stat"><div class="label">Scanned candidates</div><b>{len(decision_rows)}</b></div>
+  <div class="stat"><div class="label">Approved</div><b class="pnl-positive">{approved}</b></div>
+  <div class="stat"><div class="label">Rejected</div><b class="muted">{rejected}</b></div>
+</div>"""
+    return _page("Overview", "/", body)
+
+
+@app.get("/kpis", response_class=HTMLResponse)
+def kpis_page(days: int = Query(default=14, ge=1, le=365)) -> str:
+    kpi_data = daily_kpis(days)
+    max_abs_pnl = max((abs(r["realized_pnl"]) for r in kpi_data if r["realized_pnl"] is not None), default=0)
+    kpi_rows = []
+    for row in kpi_data:
+        kpi_rows.append(
+            "<tr><td><b>{day}</b></td><td>{scanned}</td><td>{approved}</td><td>{approval_pct}%</td>"
+            "<td>{closed}</td><td class=\"pnl-positive\">{wins}</td><td class=\"pnl-negative\">{losses}</td>"
+            "<td>{bar}</td><td>{pnl}</td></tr>".format(
+                day=row["day"], scanned=row["scanned"], approved=row["approved"],
+                approval_pct=row["approval_pct"], closed=row["closed"], wins=row["wins"],
+                losses=row["losses"], bar=_pnl_bar(row["realized_pnl"], max_abs_pnl), pnl=_pnl_text(row["realized_pnl"]),
             )
         )
-    decisions_table = "".join(rows) or '<tr><td colspan="6" class="empty-state">No decisions recorded yet</td></tr>'
+    kpi_table = "".join(kpi_rows) or '<tr><td colspan="9" class="empty-state">No data yet for this window</td></tr>'
+    day_filters = "".join(
+        f'<a href="/kpis?days={option}"{" class=\"active\"" if option == days else ""}>{option}d</a>'
+        for option in (7, 14, 30, 90)
+    )
 
+    body = f"""
+<h2>Daily KPIs<span class="day-filters">{day_filters}</span></h2>
+<div class="card"><table><thead><tr><th>Day</th><th>Scanned</th><th>Approved</th><th>Approval %</th>
+<th>Closed</th><th>Wins</th><th>Losses</th><th>P&amp;L</th><th></th></tr></thead>
+<tbody>{kpi_table}</tbody></table></div>"""
+    return _page("Daily KPIs", "/kpis", body)
+
+
+@app.get("/trades", response_class=HTMLResponse)
+def trades_page() -> str:
     trade_rows = []
     for trade in recent_trades():
         pnl = trade["realized_pnl"]
@@ -263,70 +338,38 @@ def dashboard(days: int = Query(default=14, ge=1, le=365)) -> str:
         )
     trades_table = "".join(trade_rows) or '<tr><td colspan="10" class="empty-state">No trades recorded yet</td></tr>'
 
-    kpi_data = daily_kpis(days)
-    max_abs_pnl = max((abs(r["realized_pnl"]) for r in kpi_data if r["realized_pnl"] is not None), default=0)
-    kpi_rows = []
-    for row in kpi_data:
-        kpi_rows.append(
-            "<tr><td><b>{day}</b></td><td>{scanned}</td><td>{approved}</td><td>{approval_pct}%</td>"
-            "<td>{closed}</td><td class=\"pnl-positive\">{wins}</td><td class=\"pnl-negative\">{losses}</td>"
-            "<td>{bar}</td><td>{pnl}</td></tr>".format(
-                day=row["day"], scanned=row["scanned"], approved=row["approved"],
-                approval_pct=row["approval_pct"], closed=row["closed"], wins=row["wins"],
-                losses=row["losses"], bar=_pnl_bar(row["realized_pnl"], max_abs_pnl), pnl=_pnl_text(row["realized_pnl"]),
-            )
-        )
-    kpi_table = "".join(kpi_rows) or '<tr><td colspan="9" class="empty-state">No data yet for this window</td></tr>'
-    day_filters = "".join(
-        f'<a href="/?days={option}"{" class=\"active\"" if option == days else ""}>{option}d</a>'
-        for option in (7, 14, 30, 90)
-    )
-
-    account_data = account_snapshot()
-    if account_data is not None:
-        pnl_class = "pnl-positive" if account_data["daily_pnl"] >= 0 else "pnl-negative"
-        sign = "+" if account_data["daily_pnl"] >= 0 else ""
-        portfolio_stats = f"""
-  <div class="stat"><div class="label">Equity</div><b>${account_data['equity']:,.2f}</b></div>
-  <div class="stat"><div class="label">Cash</div><b>${account_data['cash']:,.2f}</b></div>
-  <div class="stat"><div class="label">Buying power</div><b>${account_data['buying_power']:,.2f}</b></div>
-  <div class="stat"><div class="label">Daily P&amp;L</div><b class="{pnl_class}">{sign}${account_data['daily_pnl']:,.2f} ({account_data['daily_pnl_pct']:+.2f}%)</b></div>"""
-    else:
-        portfolio_stats = '\n  <div class="stat"><div class="label">Portfolio</div><b class="muted">unavailable</b></div>'
-
-    return f"""<!doctype html>
-<html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Options Alpha Agent</title>
-<style>{_CSS}</style></head>
-<body><main>
-<header>
-  <div><h1>Options Alpha Agent</h1><p>Autonomous Bull Put Spread agent — decision journal and trade log</p></div>
-  <span class="badge-live">PAPER TRADING MODE — NO REAL CAPITAL</span>
-</header>
-
-<h2>Portfolio</h2>
-<div class="stats">{portfolio_stats}
-</div>
-
-<h2>Agent activity</h2>
-<div class="stats">
-  <div class="stat"><div class="label">Scanned candidates</div><b>{len(decision_rows)}</b></div>
-  <div class="stat"><div class="label">Approved</div><b class="pnl-positive">{approved}</b></div>
-  <div class="stat"><div class="label">Rejected</div><b class="muted">{rejected}</b></div>
-</div>
-
-<h2>Daily KPIs<span class="day-filters">{day_filters}</span></h2>
-<div class="card"><table><thead><tr><th>Day</th><th>Scanned</th><th>Approved</th><th>Approval %</th>
-<th>Closed</th><th>Wins</th><th>Losses</th><th>P&amp;L</th><th></th></tr></thead>
-<tbody>{kpi_table}</tbody></table></div>
-
+    body = f"""
 <h2>Positions &amp; trades</h2>
 <div class="card"><table><thead><tr><th>Opened</th><th>Symbol</th><th>Expiration</th><th>Strikes</th>
 <th>Contracts</th><th>Credit</th><th>Status</th><th>Closed</th><th>Exit reason</th><th>P&amp;L</th></tr></thead>
-<tbody>{trades_table}</tbody></table></div>
+<tbody>{trades_table}</tbody></table></div>"""
+    return _page("Positions & Trades", "/trades", body)
 
+
+@app.get("/decisions", response_class=HTMLResponse)
+def decisions_page() -> str:
+    decision_rows = recent_decisions()
+    rows = []
+    for decision in decision_rows:
+        proposal = json.loads(str(decision["ai_decision"]))
+        risk_flags = proposal.get("risk_flags", [])
+        ai_not_consulted = "ai_skipped_deterministic_reject" in risk_flags
+        ai_score_display = '<span class="muted">not consulted</span>' if ai_not_consulted else f"<b>{proposal.get('score', 0)}</b>"
+        rows.append(
+            "<tr><td>{timestamp}</td><td><b>{symbol}</b></td><td>{ai}</td><td>{final}</td>"
+            "<td class=\"muted\">{reason}</td><td class=\"rationale-cell\">{why}</td></tr>".format(
+                timestamp=_format_ts(decision["timestamp"]),
+                symbol=decision["symbol"],
+                ai=ai_score_display,
+                final=_decision_badge(str(decision["final_decision"])),
+                reason=_escape(", ".join(risk_flags) or "none"),
+                why=_escape(", ".join(proposal.get("rationale", []))),
+            )
+        )
+    decisions_table = "".join(rows) or '<tr><td colspan="6" class="empty-state">No decisions recorded yet</td></tr>'
+
+    body = f"""
 <h2>Decision journal — why each candidate was approved or rejected</h2>
 <div class="card"><table><thead><tr><th>Timestamp</th><th>Symbol</th><th>AI score</th><th>Decision</th>
-<th>Risk flags</th><th>Rationale</th></tr></thead><tbody>{decisions_table}</tbody></table></div>
-
-</main></body></html>"""
+<th>Risk flags</th><th>Rationale</th></tr></thead><tbody>{decisions_table}</tbody></table></div>"""
+    return _page("Decision Journal", "/decisions", body)

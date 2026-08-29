@@ -95,16 +95,18 @@ an order) once credentials are in `.env`:
    is actually submitted, and updated with
    `closed_at`/`exit_reason`/`realized_pnl` when an exit rule fires.
 9. **Dashboard** (`app/dashboard/app.py`) — `uvicorn app.dashboard.app:app --reload`,
-   then open `http://127.0.0.1:8000`. Shows a live **Portfolio** section
-   (equity, cash, buying power, daily P&L, degrading to "unavailable"
-   rather than crashing if the API is unreachable — `DASHBOARD_FETCH_ACCOUNT=false`
-   disables it for offline demos), **Agent activity** (scanned/approved/
-   rejected counts), **Daily KPIs** (scanned/approved/approval rate/closed
+   then open `http://127.0.0.1:8000`. Four pages behind a shared navbar:
+   **Overview** (live Portfolio — equity, cash, buying power, daily P&L,
+   degrading to "unavailable" rather than crashing if the API is
+   unreachable, `DASHBOARD_FETCH_ACCOUNT=false` disables it for offline
+   demos — plus Agent activity scanned/approved/rejected counts),
+   **Daily KPIs** (`/kpis`, scanned/approved/approval rate/closed
    trades/wins/losses/realized P&L per day — grouped by date directly in
    SQL, portable across SQLite and Postgres — with `?days=7/14/30/90`
-   filters, so "is everything going okay" doesn't require scrolling raw
-   rows), the full trade journal, and the decision journal with each
-   candidate's AI score, final decision, risk flags and rationale.
+   filters and an inline bar visualization, so "is everything going okay"
+   doesn't require scrolling raw rows), **Positions & Trades** (`/trades`,
+   the full trade journal), and **Decision Journal** (`/decisions`, every
+   candidate's AI score, final decision, risk flags and rationale).
    `/api/decisions`, `/api/trades`, `/api/account` and `/api/daily-kpis`
    return the same data as JSON.
 
