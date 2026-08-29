@@ -160,6 +160,17 @@ monitor_positions.py  ->  run_agent.py
 options_alpha.db persisted via actions/cache between runs
 ```
 
+**Token exposure risk, and its mitigation:** cron-job.org must hold the
+GitHub token in plaintext to send it as a request header on every call —
+this is inherent to any HTTP-webhook scheduler, not something that can be
+hidden. The mitigation is scope minimization, not secrecy: the token is a
+fine-grained PAT restricted to this one repository with only the
+`Actions: Read and write` permission, so a leak lets an attacker trigger or
+cancel workflow runs on this repo and nothing else — no code access, no
+other repos, no account-level access. It also carries a short expiration
+(through the end of the scoring window) and is revoked manually once the
+competition ends, rather than left live indefinitely.
+
 ## Data model
 
 - **decisions** — every candidate ever evaluated: market inputs, option
