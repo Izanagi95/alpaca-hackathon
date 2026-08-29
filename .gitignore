@@ -11,5 +11,7 @@ __pycache__/
 .vscode/
 .idea/
 
-# Personal operational notes, not a hackathon deliverable — not meant for judges.
+# Personal operational notes and submission-form drafts — not hackathon
+# deliverables, not meant to be browsed by judges.
 docs/PRIMA_DI_LUNEDI.md
+docs/SUBMISSION_COPY.md
