@@ -24,7 +24,6 @@ jobs:
       ALPACA_PAPER: "true"
       PAPER_TRADING_ONLY: "true"
       DRY_RUN: ${{ vars.DRY_RUN || 'true' }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       FEATHERLESS_API_KEY: ${{ secrets.FEATHERLESS_API_KEY }}
       AI_PROVIDER: ${{ vars.AI_PROVIDER || 'none' }}
       AI_MODEL: ${{ vars.AI_MODEL || 'claude-sonnet-5' }}

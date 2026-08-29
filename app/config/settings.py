@@ -43,8 +43,7 @@ class Settings(BaseModel):
     score_weight_reward: int = 15
 
     ai_provider: str = "none"
-    anthropic_api_key: str = Field(default="", repr=False)
-    ai_model: str = "claude-sonnet-5"
+    ai_model: str = "Qwen/Qwen3-30B-A3B-Instruct-2507"
     featherless_api_key: str = Field(default="", repr=False)
     featherless_base_url: str = "https://api.featherless.ai/v1"
 
@@ -140,8 +139,7 @@ class Settings(BaseModel):
             score_weight_strike=int(os.getenv("SCORE_WEIGHT_STRIKE", "15")),
             score_weight_reward=int(os.getenv("SCORE_WEIGHT_REWARD", "15")),
             ai_provider=os.getenv("AI_PROVIDER", "none"),
-            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-            ai_model=os.getenv("AI_MODEL", "claude-sonnet-5"),
+            ai_model=os.getenv("AI_MODEL", "Qwen/Qwen3-30B-A3B-Instruct-2507"),
             featherless_api_key=os.getenv("FEATHERLESS_API_KEY", ""),
             featherless_base_url=os.getenv("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1"),
             database_url=os.getenv("DATABASE_URL", ""),

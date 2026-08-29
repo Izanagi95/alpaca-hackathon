@@ -36,16 +36,11 @@ from app.strategy.scoring import score_candidate
 
 def _no_ai_provider(_: dict) -> dict:
     raise RuntimeError(
-        "AI_PROVIDER is 'none'; set AI_PROVIDER=anthropic (with ANTHROPIC_API_KEY) or "
-        "AI_PROVIDER=featherless (with FEATHERLESS_API_KEY and AI_MODEL)"
+        "AI_PROVIDER is 'none'; set AI_PROVIDER=featherless (with FEATHERLESS_API_KEY and AI_MODEL)"
     )
 
 
 def _build_ai_provider(settings: Settings):
-    if settings.ai_provider == "anthropic":
-        from app.agents.ai_provider import build_anthropic_provider
-
-        return build_anthropic_provider(settings)
     if settings.ai_provider == "featherless":
         from app.agents.ai_provider import build_featherless_provider
 

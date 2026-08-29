@@ -49,14 +49,12 @@ decision-support layer over quantitative inputs that are computed
 deterministically upstream by the scoring module. Every proposal, valid or
 rejected, is journaled with its full rationale.
 
-Two interchangeable providers are supported (`AI_PROVIDER`): **Anthropic**
-(forced tool call, so the model can't reply with free text) and
-**Featherless.ai** (an OpenAI-compatible host for open-weight models —
-currently configured with `Qwen/Qwen3-30B-A3B-Instruct-2507`, a non-reasoning
-MoE variant chosen specifically so responses are plain JSON with no
-`<think>` preamble to strip). Either way, the raw output is validated by the
-same Pydantic schema before it can influence anything — a malformed response
-from either provider becomes a forced `REJECT`.
+The provider is **Featherless.ai** (an OpenAI-compatible host for
+open-weight models), currently configured with
+`Qwen/Qwen3-30B-A3B-Instruct-2507`, a non-reasoning MoE variant chosen
+specifically so responses are plain JSON with no `<think>` preamble to
+strip. The raw output is validated by the same Pydantic schema before it
+can influence anything — a malformed response becomes a forced `REJECT`.
 
 To keep the AI cost/latency bounded at scale, `TradeWorkflow` runs a
 `RiskEngine.pre_screen()` pass first and skips the AI call entirely for a

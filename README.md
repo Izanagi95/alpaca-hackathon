@@ -108,7 +108,7 @@ an order) once credentials are in `.env`:
    FastAPI `app` with no logic changes, and `vercel.json` routes every
    request to it — Vercel's Python runtime supports ASGI apps natively, so
    this is a thin entrypoint, not a rewrite. `api/requirements.txt` is a
-   slimmer dependency set (no `anthropic`/`openai`/`mcp`, which the
+   slimmer dependency set (no `openai`/`mcp`, which the
    dashboard never imports) to stay under Vercel's function size limit. Set
    `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ALPACA_PAPER=true`,
    `PAPER_TRADING_ONLY=true` and `DATABASE_URL` as Vercel environment
@@ -126,25 +126,20 @@ Run the whole scan-to-decision loop once against real Alpaca data:
 provide a reliable earnings-calendar feed, and rather than fake this check
 it is left out and called out explicitly.
 
-## AI Analyst — two interchangeable providers
+## AI Analyst
 
-Selected via `AI_PROVIDER`. Either way, the raw output passes through
-`AIDecisionLayer.analyze`, which validates it against the `AIProposal`
-Pydantic schema — anything unparseable becomes a forced `REJECT` with
-`invalid_ai_output`. With `AI_PROVIDER=none` (the default),
+`AI_PROVIDER=featherless` (`FEATHERLESS_API_KEY`, `AI_MODEL` set to a model
+id hosted on [Featherless.ai](https://featherless.ai), optionally
+`FEATHERLESS_BASE_URL`) calls an OpenAI-compatible chat completion. The raw
+output passes through `AIDecisionLayer.analyze`, which validates it against
+the `AIProposal` Pydantic schema — anything unparseable becomes a forced
+`REJECT` with `invalid_ai_output`. With `AI_PROVIDER=none` (the default),
 `scripts/run_agent.py` refuses to run rather than silently skipping AI
-evaluation.
-
-- **`AI_PROVIDER=anthropic`** (`ANTHROPIC_API_KEY`, `AI_MODEL`) — calls the
-  Anthropic API with a forced tool call (`submit_options_proposal`) so the
-  model cannot reply with free text.
-- **`AI_PROVIDER=featherless`** (`FEATHERLESS_API_KEY`, `AI_MODEL` set to a
-  model id hosted on [Featherless.ai](https://featherless.ai), optionally
-  `FEATHERLESS_BASE_URL`) — Featherless serves many different open-weight
-  models behind an OpenAI-compatible API, and tool-calling support isn't
-  uniform across all of them, so this provider instead instructs the model
-  to reply with a plain JSON object and parses it directly (stripping a
-  markdown code fence if the model adds one despite instructions not to).
+evaluation. Featherless serves many different open-weight models behind one
+API, and tool-calling support isn't uniform across all of them, so the
+provider instead instructs the model to reply with a plain JSON object and
+parses it directly (stripping a markdown code fence if the model adds one
+despite instructions not to).
 
 ## Running it continuously
 
@@ -177,8 +172,7 @@ To enable it:
 
 1. Push this repository to GitHub (may stay private during development).
 2. Add repository **secrets**: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` (the
-   official competition paper account), and `ANTHROPIC_API_KEY` /
-   `FEATHERLESS_API_KEY` depending on which AI provider is used.
+   official competition paper account), and `FEATHERLESS_API_KEY`.
 3. Add repository **variables** to override any default from
    `.env.example` (`AI_PROVIDER`, `AI_MODEL`, `WATCHLIST`, `MIN_AI_SCORE`,
    etc.) — anything not set falls back to the same defaults.
