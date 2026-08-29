@@ -203,10 +203,14 @@ was mitigated deliberately rather than ignored.
   `monitor_positions.py` triggers an exit.
 
 **Shared database (optional).** `DecisionRepository` runs on SQLAlchemy
-Core, so the same schema and queries work against local SQLite (the
-default — a separate file per environment) or a remote Postgres database
-such as Supabase, by setting `DATABASE_URL` to a `postgresql://...`
-connection string. With it set, GitHub Actions, local development and a
+Core, so the same table definitions and queries work against local SQLite
+(the default — a separate file per environment) or a remote Postgres
+database such as Supabase, by setting `DATABASE_URL` to a `postgresql://...`
+connection string. On Postgres, tables are created under a dedicated
+`alpaca` Postgres schema (namespace) rather than the default `public` one —
+applied via a `schema_translate_map` at the engine level, not baked into the
+table definitions, since SQLite has no equivalent concept and must stay
+unaffected. With `DATABASE_URL` set, GitHub Actions, local development and a
 hosted dashboard all read and write the same journal instead of each
 holding its own disconnected copy — replacing the artifact-download
 workflow below with just querying the live database directly.

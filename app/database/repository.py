@@ -15,6 +15,7 @@ from sqlalchemy import (
     func,
     insert,
     select,
+    text,
     update,
 )
 
@@ -23,6 +24,12 @@ from app.execution.order_manager import ExecutionResult
 from app.execution.position_manager import ExitDecision
 from app.risk.risk_engine import RiskDecision
 from app.strategy.bull_put_spread import BullPutSpreadCandidate
+
+# Postgres-only: SQLite has no schema concept, so table definitions stay
+# schema-agnostic and the "alpaca" schema is applied via a Postgres-only
+# schema_translate_map in __init__ instead of being baked into the Table
+# objects themselves.
+POSTGRES_SCHEMA = "alpaca"
 
 metadata = MetaData()
 
@@ -76,7 +83,12 @@ class DecisionRepository:
         url = str(database_url)
         if "://" not in url:
             url = f"sqlite:///{url}"
-        self._engine = create_engine(url, future=True)
+        engine = create_engine(url, future=True)
+        if engine.dialect.name.startswith("postgres"):
+            with engine.begin() as conn:
+                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {POSTGRES_SCHEMA}"))
+            engine = engine.execution_options(schema_translate_map={None: POSTGRES_SCHEMA})
+        self._engine = engine
         metadata.create_all(self._engine)
 
     def record(
