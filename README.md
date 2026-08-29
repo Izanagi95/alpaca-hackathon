@@ -1,4 +1,4 @@
-# Options Alpha Agent
+# Riskgate
 
 An autonomous, paper-trading-only agent that trades defined-risk **Bull Put
 Spreads** on Alpaca. It scans a watchlist with live market data, scores
@@ -197,7 +197,7 @@ To enable it:
 
 To test outside market hours (e.g. verifying a new `DATABASE_URL` actually
 works from inside a GitHub Actions runner), trigger the workflow manually
-with `force_run: true` — `gh workflow run "Options Alpha Agent" -f force_run=true`
+with `force_run: true` — `gh workflow run "Riskgate" -f force_run=true`
 — which bypasses the market-hours gate while `DRY_RUN` still governs
 whether anything is actually submitted.
 

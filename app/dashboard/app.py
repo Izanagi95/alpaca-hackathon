@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "options_alpha.db"))
 ACCOUNT_FETCH_TIMEOUT_SECONDS = 5.0
 ACCOUNT_CACHE_TTL_SECONDS = 10.0
-app = FastAPI(title="Options Alpha Agent")
+app = FastAPI(title="Riskgate")
 _account_cache: dict[str, object] = {"data": None, "fetched_at": 0.0}
 
 
@@ -296,12 +296,12 @@ def _page(title: str, active_path: str, body: str) -> str:
     )
     return f"""<!doctype html>
 <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Options Alpha Agent — {title}</title>
+<title>Riskgate — {title}</title>
 <style>{_CSS}</style></head>
 <body>
 <div class="topbar"><div class="topbar-inner">
   <header>
-    <div><h1>Options Alpha Agent</h1><p>Autonomous Bull Put Spread agent — decision journal and trade log</p></div>
+    <div><h1>Riskgate</h1><p>Autonomous Bull Put Spread agent — decision journal and trade log</p></div>
     <span class="badge-live">PAPER TRADING MODE — NO REAL CAPITAL</span>
   </header>
   <nav class="tabs">{nav_links}</nav>

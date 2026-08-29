@@ -1,6 +1,6 @@
 # Architecture
 
-Options Alpha Agent is an autonomous, paper-trading-only agent that scans for
+Riskgate is an autonomous, paper-trading-only agent that scans for
 Bull Put Spread candidates, scores them quantitatively, asks an LLM for a
 consultative opinion, and only ever executes a trade if a fully deterministic
 Risk Engine approves it. The LLM can never submit an order on its own.

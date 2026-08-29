@@ -19,7 +19,7 @@ pytest -q
 
 ## 0:00 - 0:30 — Framing
 
-"This is Options Alpha Agent: an autonomous paper-trading agent that trades
+"This is Riskgate: an autonomous paper-trading agent that trades
 Bull Put Spreads. The one rule the whole system is built around: the AI can
 analyze and propose, but a deterministic Risk Engine is the only thing that
 can approve a trade. Everything runs against a $100,000 Alpaca **paper**

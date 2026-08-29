@@ -1,4 +1,4 @@
-# Options Alpha Agent — one-page write-up
+# Riskgate — one-page write-up
 
 ## What it is
 
