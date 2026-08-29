@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Query
@@ -16,7 +17,9 @@ from app.database.repository import DecisionRepository
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "options_alpha.db"))
 ACCOUNT_FETCH_TIMEOUT_SECONDS = 5.0
+ACCOUNT_CACHE_TTL_SECONDS = 10.0
 app = FastAPI(title="Options Alpha Agent")
+_account_cache: dict[str, object] = {"data": None, "fetched_at": 0.0}
 
 
 def _database_target() -> str:
@@ -30,9 +33,18 @@ def _database_target() -> str:
 def account_snapshot() -> dict[str, float] | None:
     """Live portfolio snapshot from Alpaca. Returns None if credentials are
     missing, paper mode is misconfigured, or the API is unreachable — the
-    dashboard degrades gracefully rather than failing to render."""
+    dashboard degrades gracefully rather than failing to render.
+
+    Cached for ACCOUNT_CACHE_TTL_SECONDS: this is a real network call to
+    Alpaca on every invocation, so navigating back to the Overview page
+    repeatedly within a few seconds would otherwise repeat it needlessly —
+    the account balance doesn't change that often. Explicitly NOT cached
+    when DASHBOARD_FETCH_ACCOUNT=false or credentials are missing, so tests
+    that toggle those between calls keep working."""
     if os.getenv("DASHBOARD_FETCH_ACCOUNT", "true").lower() != "true":
         return None
+    if _account_cache["data"] is not None and time.monotonic() - _account_cache["fetched_at"] < ACCOUNT_CACHE_TTL_SECONDS:
+        return _account_cache["data"]  # type: ignore[return-value]
     try:
         settings = Settings.from_env(PROJECT_ROOT / ".env")
         settings.require_paper_mode()
@@ -41,40 +53,57 @@ def account_snapshot() -> dict[str, float] | None:
         account = AlpacaClients(settings).verify_account()
         equity = float(account.equity)
         last_equity = float(account.last_equity) if account.last_equity else equity
-        return {
+        snapshot = {
             "equity": equity,
             "cash": float(account.cash) if account.cash else 0.0,
             "buying_power": float(account.buying_power) if account.buying_power else 0.0,
             "daily_pnl": round(equity - last_equity, 2),
             "daily_pnl_pct": round((equity - last_equity) / last_equity * 100, 2) if last_equity else 0.0,
         }
+        _account_cache["data"] = snapshot
+        _account_cache["fetched_at"] = time.monotonic()
+        return snapshot
     except Exception:
         return None
 
 
-def recent_decisions() -> list[dict[str, object]]:
+def recent_decisions(
+    start: str | None = None, end: str | None = None,
+    symbol: str | None = None, final_decision: str | None = None,
+) -> list[dict[str, object]]:
     repository = DecisionRepository(_database_target())
     try:
-        return repository.list_recent()
+        return repository.list_recent(start=start, end=end, symbol=symbol, final_decision=final_decision)
     finally:
         repository.close()
 
 
-def recent_trades() -> list[dict[str, object]]:
+def recent_trades(
+    start: str | None = None, end: str | None = None,
+    symbol: str | None = None, status: str | None = None,
+) -> list[dict[str, object]]:
     repository = DecisionRepository(_database_target())
     try:
-        return repository.list_recent_trades()
+        return repository.list_recent_trades(start=start, end=end, symbol=symbol, status=status)
     finally:
         repository.close()
 
 
-def daily_kpis(days: int) -> list[dict[str, object]]:
+def known_symbols() -> list[str]:
+    repository = DecisionRepository(_database_target())
+    try:
+        return repository.distinct_symbols()
+    finally:
+        repository.close()
+
+
+def daily_kpis(start: str | None = None, end: str | None = None) -> list[dict[str, object]]:
     """Per-day scan/approve counts merged with per-day closed-trade P&L, so
     'is everything going okay today' doesn't require scrolling raw rows."""
     repository = DecisionRepository(_database_target())
     try:
-        decisions_by_day = {row["day"]: row for row in repository.daily_decision_counts(days=days)}
-        trades_by_day = {row["day"]: row for row in repository.daily_trade_pnl(days=days)}
+        decisions_by_day = {row["day"]: row for row in repository.daily_decision_counts(start=start, end=end)}
+        trades_by_day = {row["day"]: row for row in repository.daily_trade_pnl(start=start, end=end)}
     finally:
         repository.close()
 
@@ -98,19 +127,31 @@ def daily_kpis(days: int) -> list[dict[str, object]]:
     return merged
 
 
+def _preset_range(days: int) -> tuple[str, str]:
+    end = date.today()
+    start = end - timedelta(days=days - 1)
+    return start.isoformat(), end.isoformat()
+
+
 @app.get("/api/decisions")
-def decisions() -> list[dict[str, object]]:
-    return recent_decisions()
+def decisions(
+    start: str | None = None, end: str | None = None,
+    symbol: str | None = None, final_decision: str | None = None,
+) -> list[dict[str, object]]:
+    return recent_decisions(start, end, symbol, final_decision)
 
 
 @app.get("/api/trades")
-def trades() -> list[dict[str, object]]:
-    return recent_trades()
+def trades(
+    start: str | None = None, end: str | None = None,
+    symbol: str | None = None, status: str | None = None,
+) -> list[dict[str, object]]:
+    return recent_trades(start, end, symbol, status)
 
 
 @app.get("/api/daily-kpis")
-def daily_kpis_endpoint(days: int = Query(default=14, ge=1, le=365)) -> list[dict[str, object]]:
-    return daily_kpis(days)
+def daily_kpis_endpoint(start: str | None = None, end: str | None = None) -> list[dict[str, object]]:
+    return daily_kpis(start, end)
 
 
 @app.get("/api/account")
@@ -163,6 +204,11 @@ def _pnl_bar(value: float | None, max_abs: float) -> str:
     )
 
 
+def _option(value: str, label: str, selected: str | None) -> str:
+    is_selected = " selected" if value == (selected or "") else ""
+    return f'<option value="{value}"{is_selected}>{label}</option>'
+
+
 _CSS = """
 :root{
   --bg:#f6f4ef; --surface:#ffffff; --border:#e6e1d6; --border-soft:#f0ece2;
@@ -188,7 +234,7 @@ nav.tabs a{display:inline-block;padding:11px 6px;margin-right:22px;color:var(--t
 nav.tabs a.active{color:var(--accent);border-bottom-color:var(--accent)}
 nav.tabs a:hover:not(.active){color:var(--text)}
 h2{font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);
-  margin:0 0 14px;display:flex;align-items:center;gap:16px;font-weight:700}
+  margin:0 0 14px;display:flex;align-items:center;gap:16px;font-weight:700;flex-wrap:wrap}
 h2:not(:first-child){margin-top:40px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
 .stat{background:var(--surface);padding:18px 20px;border-radius:var(--radius);
@@ -198,11 +244,23 @@ h2:not(:first-child){margin-top:40px}
 .pnl-positive{color:var(--accent)} .pnl-negative{color:var(--danger)}
 .muted{color:var(--text-muted)}
 .day-filters{display:flex;gap:4px;background:var(--neutral-soft);padding:3px;border-radius:999px;
-  margin-left:auto;text-transform:none;letter-spacing:0}
+  text-transform:none;letter-spacing:0}
 .day-filters a{color:var(--text-muted);text-decoration:none;font-size:12.5px;font-weight:600;
   padding:5px 12px;border-radius:999px}
 .day-filters a.active{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .day-filters a:hover:not(.active){color:var(--text)}
+.filter-bar{background:var(--surface);border:1px solid var(--border-soft);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:14px 18px;margin-bottom:18px;display:flex;align-items:flex-end;
+  gap:14px;flex-wrap:wrap;font-size:13px}
+.filter-bar .field{display:flex;flex-direction:column;gap:5px}
+.filter-bar label{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);font-weight:700}
+.filter-bar input,.filter-bar select{border:1px solid var(--border);border-radius:8px;padding:7px 10px;
+  font-size:13px;font-family:inherit;background:var(--bg);color:var(--text)}
+.filter-bar button{background:var(--accent);color:white;border:none;border-radius:8px;padding:8px 16px;
+  font-size:13px;font-weight:700;cursor:pointer}
+.filter-bar button:hover{opacity:.9}
+.filter-bar .clear{color:var(--text-muted);text-decoration:none;font-size:12.5px;font-weight:600}
+.filter-bar .clear:hover{color:var(--text)}
 .card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);
   border:1px solid var(--border-soft);overflow:hidden;overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -286,9 +344,15 @@ def overview_page() -> str:
 
 
 @app.get("/kpis", response_class=HTMLResponse)
-def kpis_page(days: int = Query(default=14, ge=1, le=365)) -> str:
-    kpi_data = daily_kpis(days)
+def kpis_page(start: str | None = None, end: str | None = None) -> str:
+    if not start and not end:
+        start, end = _preset_range(14)
+    kpi_data = daily_kpis(start, end)
     max_abs_pnl = max((abs(r["realized_pnl"]) for r in kpi_data if r["realized_pnl"] is not None), default=0)
+    total_pnl = sum(r["realized_pnl"] for r in kpi_data if r["realized_pnl"] is not None)
+    total_scanned = sum(r["scanned"] for r in kpi_data)
+    total_approved = sum(r["approved"] for r in kpi_data)
+
     kpi_rows = []
     for row in kpi_data:
         kpi_rows.append(
@@ -300,14 +364,33 @@ def kpis_page(days: int = Query(default=14, ge=1, le=365)) -> str:
                 losses=row["losses"], bar=_pnl_bar(row["realized_pnl"], max_abs_pnl), pnl=_pnl_text(row["realized_pnl"]),
             )
         )
-    kpi_table = "".join(kpi_rows) or '<tr><td colspan="9" class="empty-state">No data yet for this window</td></tr>'
-    day_filters = "".join(
-        f'<a href="/kpis?days={option}"{" class=\"active\"" if option == days else ""}>{option}d</a>'
-        for option in (7, 14, 30, 90)
+    kpi_table = "".join(kpi_rows) or '<tr><td colspan="9" class="empty-state">No data for this range</td></tr>'
+
+    presets = "".join(
+        f'<a href="/kpis?start={p_start}&end={p_end}"{" class=\"active\"" if (start, end) == (p_start, p_end) else ""}>{label}</a>'
+        for label, (p_start, p_end) in (
+            ("7d", _preset_range(7)), ("14d", _preset_range(14)),
+            ("30d", _preset_range(30)), ("90d", _preset_range(90)),
+        )
     )
 
     body = f"""
-<h2>Daily KPIs<span class="day-filters">{day_filters}</span></h2>
+<h2>Daily KPIs<span class="day-filters">{presets}</span></h2>
+<form class="filter-bar" method="get" action="/kpis">
+  <div class="field"><label>From</label><input type="date" name="start" value="{start or ''}"></div>
+  <div class="field"><label>To</label><input type="date" name="end" value="{end or ''}"></div>
+  <button type="submit">Apply</button>
+  <a class="clear" href="/kpis">Reset</a>
+</form>
+
+<div class="stats">
+  <div class="stat"><div class="label">Scanned in range</div><b>{total_scanned}</b></div>
+  <div class="stat"><div class="label">Approved in range</div><b class="pnl-positive">{total_approved}</b></div>
+  <div class="stat"><div class="label">Days with data</div><b>{len(kpi_data)}</b></div>
+  <div class="stat"><div class="label">Total realized P&amp;L</div><b>{_pnl_text(total_pnl if kpi_data else None)}</b></div>
+</div>
+
+<h2>By day</h2>
 <div class="card"><table><thead><tr><th>Day</th><th>Scanned</th><th>Approved</th><th>Approval %</th>
 <th>Closed</th><th>Wins</th><th>Losses</th><th>P&amp;L</th><th></th></tr></thead>
 <tbody>{kpi_table}</tbody></table></div>"""
@@ -315,9 +398,19 @@ def kpis_page(days: int = Query(default=14, ge=1, le=365)) -> str:
 
 
 @app.get("/trades", response_class=HTMLResponse)
-def trades_page() -> str:
+def trades_page(
+    start: str | None = None, end: str | None = None,
+    symbol: str | None = None, status: str | None = None,
+) -> str:
+    filtered = recent_trades(start, end, symbol or None, status or None)
+    open_count = sum(1 for t in filtered if not t["closed_at"])
+    closed = [t for t in filtered if t["closed_at"]]
+    wins = sum(1 for t in closed if (t["realized_pnl"] or 0) > 0)
+    losses = sum(1 for t in closed if (t["realized_pnl"] or 0) < 0)
+    total_pnl = sum(t["realized_pnl"] for t in closed if t["realized_pnl"] is not None)
+
     trade_rows = []
-    for trade in recent_trades():
+    for trade in filtered:
         pnl = trade["realized_pnl"]
         trade_rows.append(
             "<tr><td>{opened}</td><td><b>{symbol}</b></td><td>{expiration}</td><td>{short}/{long}</td>"
@@ -336,10 +429,32 @@ def trades_page() -> str:
                 pnl=_pnl_text(pnl),
             )
         )
-    trades_table = "".join(trade_rows) or '<tr><td colspan="10" class="empty-state">No trades recorded yet</td></tr>'
+    trades_table = "".join(trade_rows) or '<tr><td colspan="10" class="empty-state">No trades match these filters</td></tr>'
+
+    symbol_options = "".join(_option(s, s, symbol) for s in known_symbols())
+    status_options = "".join(
+        _option(value, label, status)
+        for value, label in (("submitted", "Submitted"), ("closed", "Closed"), ("dry_run", "Dry run"), ("closed_dry_run", "Closed (dry run)"))
+    )
 
     body = f"""
 <h2>Positions &amp; trades</h2>
+<form class="filter-bar" method="get" action="/trades">
+  <div class="field"><label>From</label><input type="date" name="start" value="{start or ''}"></div>
+  <div class="field"><label>To</label><input type="date" name="end" value="{end or ''}"></div>
+  <div class="field"><label>Symbol</label><select name="symbol"><option value="">All</option>{symbol_options}</select></div>
+  <div class="field"><label>Status</label><select name="status"><option value="">All</option>{status_options}</select></div>
+  <button type="submit">Apply</button>
+  <a class="clear" href="/trades">Reset</a>
+</form>
+
+<div class="stats">
+  <div class="stat"><div class="label">Matching trades</div><b>{len(filtered)}</b></div>
+  <div class="stat"><div class="label">Open</div><b>{open_count}</b></div>
+  <div class="stat"><div class="label">Wins / Losses</div><b><span class="pnl-positive">{wins}</span> / <span class="pnl-negative">{losses}</span></b></div>
+  <div class="stat"><div class="label">Realized P&amp;L</div><b>{_pnl_text(total_pnl if closed else None)}</b></div>
+</div>
+
 <div class="card"><table><thead><tr><th>Opened</th><th>Symbol</th><th>Expiration</th><th>Strikes</th>
 <th>Contracts</th><th>Credit</th><th>Status</th><th>Closed</th><th>Exit reason</th><th>P&amp;L</th></tr></thead>
 <tbody>{trades_table}</tbody></table></div>"""
@@ -347,10 +462,16 @@ def trades_page() -> str:
 
 
 @app.get("/decisions", response_class=HTMLResponse)
-def decisions_page() -> str:
-    decision_rows = recent_decisions()
+def decisions_page(
+    start: str | None = None, end: str | None = None,
+    symbol: str | None = None, final_decision: str | None = None,
+) -> str:
+    filtered = recent_decisions(start, end, symbol or None, final_decision or None)
+    approved = sum(1 for d in filtered if d["final_decision"] == "APPROVE")
+    rejected = len(filtered) - approved
+
     rows = []
-    for decision in decision_rows:
+    for decision in filtered:
         proposal = json.loads(str(decision["ai_decision"]))
         risk_flags = proposal.get("risk_flags", [])
         ai_not_consulted = "ai_skipped_deterministic_reject" in risk_flags
@@ -366,10 +487,29 @@ def decisions_page() -> str:
                 why=_escape(", ".join(proposal.get("rationale", []))),
             )
         )
-    decisions_table = "".join(rows) or '<tr><td colspan="6" class="empty-state">No decisions recorded yet</td></tr>'
+    decisions_table = "".join(rows) or '<tr><td colspan="6" class="empty-state">No decisions match these filters</td></tr>'
+
+    symbol_options = "".join(_option(s, s, symbol) for s in known_symbols())
+    decision_options = "".join(_option(v, v, final_decision) for v in ("APPROVE", "REJECT"))
 
     body = f"""
 <h2>Decision journal — why each candidate was approved or rejected</h2>
+<form class="filter-bar" method="get" action="/decisions">
+  <div class="field"><label>From</label><input type="date" name="start" value="{start or ''}"></div>
+  <div class="field"><label>To</label><input type="date" name="end" value="{end or ''}"></div>
+  <div class="field"><label>Symbol</label><select name="symbol"><option value="">All</option>{symbol_options}</select></div>
+  <div class="field"><label>Decision</label><select name="final_decision"><option value="">All</option>{decision_options}</select></div>
+  <button type="submit">Apply</button>
+  <a class="clear" href="/decisions">Reset</a>
+</form>
+
+<div class="stats">
+  <div class="stat"><div class="label">Matching candidates</div><b>{len(filtered)}</b></div>
+  <div class="stat"><div class="label">Approved</div><b class="pnl-positive">{approved}</b></div>
+  <div class="stat"><div class="label">Rejected</div><b class="muted">{rejected}</b></div>
+  <div class="stat"><div class="label">Approval rate</div><b>{round(approved / len(filtered) * 100, 1) if filtered else 0}%</b></div>
+</div>
+
 <div class="card"><table><thead><tr><th>Timestamp</th><th>Symbol</th><th>AI score</th><th>Decision</th>
 <th>Risk flags</th><th>Rationale</th></tr></thead><tbody>{decisions_table}</tbody></table></div>"""
     return _page("Decision Journal", "/decisions", body)

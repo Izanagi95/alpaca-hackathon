@@ -17,7 +17,7 @@ def test_daily_decision_counts_groups_by_date(tmp_path) -> None:
             ai_decision="{}", ai_rationale="[]", risk_checks="{}", final_decision="APPROVE",
         ))
 
-    rows = {row["day"]: row for row in repo.daily_decision_counts(days=30)}
+    rows = {row["day"]: row for row in repo.daily_decision_counts(start="2026-08-01", end="2026-08-31")}
 
     assert rows["2026-08-27"]["scanned"] == 2
     assert rows["2026-08-27"]["approved"] == 1
@@ -53,7 +53,7 @@ def test_daily_trade_pnl_only_counts_closed_trades(tmp_path) -> None:
             client_order_id="c", execution_status="dry_run", exit_reason=None, realized_pnl=None,
         ))
 
-    rows = repo.daily_trade_pnl(days=30)
+    rows = repo.daily_trade_pnl(start="2026-08-01", end="2026-08-31")
     assert len(rows) == 1
     day_row = rows[0]
     assert day_row["day"] == "2026-08-27"

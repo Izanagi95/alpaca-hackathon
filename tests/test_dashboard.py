@@ -24,10 +24,10 @@ def test_kpis_page_renders_empty_state(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("DASHBOARD_FETCH_ACCOUNT", "false")
     client = TestClient(dashboard_module.app)
 
-    response = client.get("/kpis?days=7")
+    response = client.get("/kpis?start=2026-08-01&end=2026-08-07")
 
     assert response.status_code == 200
-    assert "No data yet for this window" in response.text
+    assert "No data for this range" in response.text
 
 
 def test_trades_page_renders_empty_state(tmp_path, monkeypatch) -> None:
@@ -38,7 +38,7 @@ def test_trades_page_renders_empty_state(tmp_path, monkeypatch) -> None:
     response = client.get("/trades")
 
     assert response.status_code == 200
-    assert "No trades recorded yet" in response.text
+    assert "No trades match these filters" in response.text
 
 
 def test_decisions_page_renders_empty_state(tmp_path, monkeypatch) -> None:
@@ -49,7 +49,56 @@ def test_decisions_page_renders_empty_state(tmp_path, monkeypatch) -> None:
     response = client.get("/decisions")
 
     assert response.status_code == 200
-    assert "No decisions recorded yet" in response.text
+    assert "No decisions match these filters" in response.text
+
+
+def test_decisions_page_date_filter_excludes_out_of_range_rows(tmp_path, monkeypatch) -> None:
+    from app.database.repository import DecisionRepository, decisions_table
+
+    db_path = tmp_path / "filter.db"
+    monkeypatch.setattr(dashboard_module, "DATABASE_PATH", db_path)
+    monkeypatch.setenv("DASHBOARD_FETCH_ACCOUNT", "false")
+
+    repo = DecisionRepository(db_path)
+    with repo._engine.begin() as conn:
+        conn.execute(decisions_table.insert().values(
+            timestamp="2026-01-01T10:00:00+00:00", symbol="OLD", market_data="{}", options_data="{}",
+            ai_decision="{}", ai_rationale="[]", risk_checks="{}", final_decision="APPROVE",
+        ))
+        conn.execute(decisions_table.insert().values(
+            timestamp="2026-08-20T10:00:00+00:00", symbol="NEW", market_data="{}", options_data="{}",
+            ai_decision="{}", ai_rationale="[]", risk_checks="{}", final_decision="REJECT",
+        ))
+
+    client = TestClient(dashboard_module.app)
+    response = client.get("/decisions?start=2026-08-01&end=2026-08-31")
+
+    # "OLD" itself may still appear in the symbol filter dropdown (it lists every
+    # known symbol regardless of the active date range) — check the actual table
+    # row content (the formatted timestamp) instead of a raw substring match.
+    assert "Aug 20" in response.text
+    assert "Jan 01" not in response.text
+
+
+def test_trades_page_symbol_filter_form_preselects_value(tmp_path, monkeypatch) -> None:
+    from app.database.repository import DecisionRepository, decisions_table
+
+    db_path = tmp_path / "symbolfilter.db"
+    monkeypatch.setattr(dashboard_module, "DATABASE_PATH", db_path)
+    monkeypatch.setenv("DASHBOARD_FETCH_ACCOUNT", "false")
+
+    repo = DecisionRepository(db_path)
+    with repo._engine.begin() as conn:
+        conn.execute(decisions_table.insert().values(
+            timestamp="2026-08-20T10:00:00+00:00", symbol="AAPL", market_data="{}", options_data="{}",
+            ai_decision="{}", ai_rationale="[]", risk_checks="{}", final_decision="APPROVE",
+        ))
+
+    client = TestClient(dashboard_module.app)
+    response = client.get("/trades?symbol=AAPL")
+
+    assert response.status_code == 200
+    assert 'value="AAPL" selected' in response.text
 
 
 def test_account_snapshot_disabled_via_env(monkeypatch) -> None:

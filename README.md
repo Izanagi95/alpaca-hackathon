@@ -99,14 +99,22 @@ an order) once credentials are in `.env`:
    **Overview** (live Portfolio — equity, cash, buying power, daily P&L,
    degrading to "unavailable" rather than crashing if the API is
    unreachable, `DASHBOARD_FETCH_ACCOUNT=false` disables it for offline
-   demos — plus Agent activity scanned/approved/rejected counts),
-   **Daily KPIs** (`/kpis`, scanned/approved/approval rate/closed
-   trades/wins/losses/realized P&L per day — grouped by date directly in
-   SQL, portable across SQLite and Postgres — with `?days=7/14/30/90`
-   filters and an inline bar visualization, so "is everything going okay"
-   doesn't require scrolling raw rows), **Positions & Trades** (`/trades`,
-   the full trade journal), and **Decision Journal** (`/decisions`, every
-   candidate's AI score, final decision, risk flags and rationale).
+   demos, cached for 10s so navigating back and forth doesn't repeat the
+   Alpaca call every time — plus Agent activity scanned/approved/rejected
+   counts), **Daily KPIs** (`/kpis`, scanned/approved/approval rate/closed
+   trades/wins/losses/realized P&L per day with an inline bar
+   visualization), **Positions & Trades** (`/trades`, with symbol/status
+   filters), and **Decision Journal** (`/decisions`, with symbol/decision
+   filters — every candidate's AI score, final decision, risk flags and
+   rationale). All three data pages filter by a real inclusive date range
+   (`?start=YYYY-MM-DD&end=YYYY-MM-DD` — native `<input type="date">`
+   pickers, no JS required) rather than "last N rows", plus quick 7/14/30/90
+   day presets on the KPI page, so filtering doesn't silently span more
+   calendar time than intended whenever a day has no data.
+   `DecisionRepository`'s underlying SQLAlchemy engine is cached per URL
+   (`app/database/repository.py:_build_engine`) instead of being rebuilt —
+   including a schema-creation round trip to Postgres — on every single
+   page load, which was the dashboard's main source of slowness before.
    `/api/decisions`, `/api/trades`, `/api/account` and `/api/daily-kpis`
    return the same data as JSON.
 

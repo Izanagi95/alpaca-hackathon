@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from urllib.parse import parse_qs, parse_qsl, quote, urlencode, urlparse, urlunsplit, urlsplit
 
@@ -95,6 +96,24 @@ def _search_path_schema(url: str) -> str | None:
     return match.group(1) if match else None
 
 
+@lru_cache(maxsize=8)
+def _build_engine(url: str):
+    """Engine construction — including the CREATE SCHEMA/create_all bootstrap,
+    each a network round trip on Postgres — is expensive enough that doing it
+    on every DecisionRepository(...) call (e.g. once per web request) made
+    every page load noticeably slow. Cached per URL so it only happens once
+    per process; the connection pool underneath is then reused across
+    requests instead of reconnecting every time."""
+    engine = create_engine(url, future=True)
+    if engine.dialect.name.startswith("postgres"):
+        schema = _search_path_schema(url)
+        if schema:
+            with engine.begin() as conn:
+                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
+    metadata.create_all(engine)
+    return engine
+
+
 class DecisionRepository:
     """Works against local SQLite (default, used by tests and local dev) or a
     remote Postgres database such as Supabase (pass a `postgresql://...` URL)
@@ -113,14 +132,7 @@ class DecisionRepository:
         if "://" not in url:
             url = f"sqlite:///{url}"
         url = _strip_unsupported_query_params(url)
-        engine = create_engine(url, future=True)
-        if engine.dialect.name.startswith("postgres"):
-            schema = _search_path_schema(url)
-            if schema:
-                with engine.begin() as conn:
-                    conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
-        self._engine = engine
-        metadata.create_all(self._engine)
+        self._engine = _build_engine(url)
 
     def record(
         self,
@@ -207,56 +219,99 @@ class DecisionRepository:
             rows = conn.execute(select(*columns).where(trades_table.c.closed_at.is_(None))).all()
         return [dict(row._mapping) for row in rows]
 
-    def list_recent_trades(self, limit: int = 50) -> list[dict[str, object]]:
+    def list_recent_trades(
+        self, limit: int = 200, start: str | None = None, end: str | None = None,
+        symbol: str | None = None, status: str | None = None,
+    ) -> list[dict[str, object]]:
+        """start/end are inclusive "YYYY-MM-DD" bounds compared against
+        opened_at (ISO8601 text sorts/compares correctly as a string, no date
+        parsing needed) — a real date-range filter, not just 'last N rows'."""
+        query = select(trades_table).order_by(trades_table.c.id.desc()).limit(limit)
+        if start:
+            query = query.where(trades_table.c.opened_at >= start)
+        if end:
+            query = query.where(trades_table.c.opened_at < f"{end}T23:59:59.999999")
+        if symbol:
+            query = query.where(trades_table.c.symbol == symbol)
+        if status:
+            query = query.where(trades_table.c.execution_status == status)
         with self._engine.connect() as conn:
-            rows = conn.execute(
-                select(trades_table).order_by(trades_table.c.id.desc()).limit(limit)
-            ).all()
+            rows = conn.execute(query).all()
         return [dict(row._mapping) for row in rows]
 
-    def list_recent(self, limit: int = 50) -> list[dict[str, object]]:
+    def list_recent(
+        self, limit: int = 200, start: str | None = None, end: str | None = None,
+        symbol: str | None = None, final_decision: str | None = None,
+    ) -> list[dict[str, object]]:
         columns = [
             decisions_table.c.timestamp, decisions_table.c.symbol,
             decisions_table.c.ai_decision, decisions_table.c.final_decision,
         ]
+        query = select(*columns).order_by(decisions_table.c.id.desc()).limit(limit)
+        if start:
+            query = query.where(decisions_table.c.timestamp >= start)
+        if end:
+            query = query.where(decisions_table.c.timestamp < f"{end}T23:59:59.999999")
+        if symbol:
+            query = query.where(decisions_table.c.symbol == symbol)
+        if final_decision:
+            query = query.where(decisions_table.c.final_decision == final_decision)
         with self._engine.connect() as conn:
-            rows = conn.execute(
-                select(*columns).order_by(decisions_table.c.id.desc()).limit(limit)
-            ).all()
+            rows = conn.execute(query).all()
         return [dict(row._mapping) for row in rows]
 
-    def daily_decision_counts(self, days: int = 14) -> list[dict[str, object]]:
+    def distinct_symbols(self) -> list[str]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(select(decisions_table.c.symbol).distinct().order_by(decisions_table.c.symbol)).all()
+        return [row[0] for row in rows]
+
+    def daily_decision_counts(self, start: str | None = None, end: str | None = None) -> list[dict[str, object]]:
         """Scanned/approved counts per day (`timestamp`'s first 10 chars, i.e.
         its date — `substr` is standard SQL and works identically on SQLite
-        and Postgres, avoiding dialect-specific date functions)."""
+        and Postgres, avoiding dialect-specific date functions). start/end
+        are inclusive "YYYY-MM-DD" bounds — a real date range, not a LIMIT
+        on however many grouped days happen to exist, which would silently
+        span more calendar time than intended whenever a day has no rows."""
         day = func.substr(decisions_table.c.timestamp, 1, 10).label("day")
         approved = func.sum(case((decisions_table.c.final_decision == "APPROVE", 1), else_=0)).label("approved")
+        query = select(day, func.count().label("scanned"), approved).group_by(day).order_by(day.desc())
+        if start:
+            query = query.where(decisions_table.c.timestamp >= start)
+        if end:
+            query = query.where(decisions_table.c.timestamp < f"{end}T23:59:59.999999")
         with self._engine.connect() as conn:
-            rows = conn.execute(
-                select(day, func.count().label("scanned"), approved)
-                .group_by(day)
-                .order_by(day.desc())
-                .limit(days)
-            ).all()
+            rows = conn.execute(query).all()
         return [dict(row._mapping) for row in rows]
 
-    def daily_trade_pnl(self, days: int = 14) -> list[dict[str, object]]:
+    def daily_trade_pnl(self, start: str | None = None, end: str | None = None) -> list[dict[str, object]]:
         """Closed-trade counts and realized P&L per day (grouped by
-        `closed_at`'s date). Only trades that have actually closed are
+        `closed_at`'s date, filtered by the same inclusive date range as
+        daily_decision_counts). Only trades that have actually closed are
         included — open positions have no realized P&L yet."""
         day = func.substr(trades_table.c.closed_at, 1, 10).label("day")
         wins = func.sum(case((trades_table.c.realized_pnl > 0, 1), else_=0)).label("wins")
         losses = func.sum(case((trades_table.c.realized_pnl < 0, 1), else_=0)).label("losses")
         pnl = func.sum(trades_table.c.realized_pnl).label("realized_pnl")
+        query = (
+            select(day, func.count().label("closed"), wins, losses, pnl)
+            .where(trades_table.c.closed_at.is_not(None))
+            .group_by(day)
+            .order_by(day.desc())
+        )
+        if start:
+            query = query.where(trades_table.c.closed_at >= start)
+        if end:
+            query = query.where(trades_table.c.closed_at < f"{end}T23:59:59.999999")
         with self._engine.connect() as conn:
-            rows = conn.execute(
-                select(day, func.count().label("closed"), wins, losses, pnl)
-                .where(trades_table.c.closed_at.is_not(None))
-                .group_by(day)
-                .order_by(day.desc())
-                .limit(days)
-            ).all()
+            rows = conn.execute(query).all()
         return [dict(row._mapping) for row in rows]
 
     def close(self) -> None:
-        self._engine.dispose()
+        """A no-op: `self._engine` is a process-wide cache shared by every
+        DecisionRepository built from the same URL (see `_build_engine`), so
+        disposing it here would break every other instance still using it —
+        e.g. the next web request. SQLAlchemy's connection pool manages idle
+        connections on its own; there is nothing this needs to release
+        per-instance. Kept as a method (rather than removed) so every
+        existing call site — scripts and tests alike — doesn't need to
+        change just because closing is no longer meaningful per-instance."""
