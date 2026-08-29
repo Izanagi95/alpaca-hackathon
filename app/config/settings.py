@@ -79,6 +79,12 @@ class Settings(BaseModel):
     @field_validator("score_weight_reward")
     @classmethod
     def validate_score_weights(cls, value: int, info: object) -> int:
+        # Runs last because pydantic validates fields in declaration order and
+        # this one is declared last, so `info.data` already has every other
+        # score_weight_* field. Naming each one explicitly (rather than looping
+        # over a registered list) means adding a new score_weight_* field
+        # requires updating this validator too, or the new weight is silently
+        # excluded from the sum-to-100 check.
         data = info.data  # type: ignore[attr-defined]
         total = (
             data.get("score_weight_regime", 0)

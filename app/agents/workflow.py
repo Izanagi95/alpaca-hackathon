@@ -29,6 +29,11 @@ class TradeWorkflow:
             # Fails on liquidity/DTE/credit/sizing/etc. regardless of what the AI
             # would say — skip the AI call entirely rather than spending time and
             # money asking about a candidate that can never be approved.
+            # `decision="REJECT"` here means "the AI was never consulted", not
+            # "the AI rejected it" (that case sets risk_flags=["invalid_ai_output"]
+            # in AIDecisionLayer.analyze instead) — the rationale and
+            # risk_flags=["ai_skipped_deterministic_reject"] below are what
+            # distinguish the two REJECT causes for anyone reading the journal.
             proposal = AIProposal(
                 decision="REJECT", score=0, strategy="bull_put_spread", confidence=0.0,
                 rationale=["Rejected by deterministic risk gates before AI evaluation"],

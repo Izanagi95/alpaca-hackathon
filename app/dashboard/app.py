@@ -87,13 +87,16 @@ def dashboard() -> str:
     rows = []
     for decision in decision_rows:
         proposal = json.loads(str(decision["ai_decision"]))
+        risk_flags = proposal.get("risk_flags", [])
+        ai_not_consulted = "ai_skipped_deterministic_reject" in risk_flags
+        ai_score_display = "n/a (not consulted)" if ai_not_consulted else proposal.get("score", 0)
         rows.append(
             "<tr><td>{timestamp}</td><td>{symbol}</td><td>{ai}</td><td>{final}</td><td>{reason}</td><td>{why}</td></tr>".format(
                 timestamp=decision["timestamp"],
                 symbol=decision["symbol"],
-                ai=proposal.get("score", 0),
+                ai=ai_score_display,
                 final=decision["final_decision"],
-                reason=_escape(", ".join(proposal.get("risk_flags", [])) or "none"),
+                reason=_escape(", ".join(risk_flags) or "none"),
                 why=_escape(", ".join(proposal.get("rationale", []))),
             )
         )
