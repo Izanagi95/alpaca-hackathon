@@ -239,6 +239,31 @@ principle (every decision is meant to be reconstructable) rather than as a
 leak to prevent, precisely because the content was checked and contains no
 credentials — only strikes, credit, AI scores and rationale.
 
+## Hosted dashboard (optional)
+
+`app/dashboard/app.py` is unchanged between environments — `api/index.py`
+re-exports the same FastAPI `app`, and `vercel.json` routes requests to it,
+since Vercel's Python runtime supports ASGI apps natively. Deliberately
+**not** given Alpaca credentials by default: the dashboard's only use for
+them is one read-only `get_account()` call for the Portfolio section, but
+Alpaca has no independently-scoped read-only key — the same credentials can
+also trade. Handing a third-party host (Vercel) full-trade-capable
+credentials for a read-only display isn't a trade worth making, so the
+recommended deployment sets only `DATABASE_URL`; the Portfolio section
+degrades to "unavailable" (already-tested behavior, not new for this) while
+positions and decisions — arguably the more interesting content — still
+render from the shared journal.
+
+## Testing outside market hours
+
+`workflow_dispatch` accepts a `force_run` boolean input that bypasses the
+`market_open_check.py` gate, letting `monitor_positions.py`/`run_agent.py`
+run on demand regardless of the actual market clock — used to verify the
+Supabase connection from inside a real GitHub Actions runner without
+waiting for market open. `DRY_RUN` still governs whether any order is
+actually submitted either way, so this doesn't weaken the paper-trading
+safety guard, only the scheduling gate.
+
 ## Fail-closed behavior
 
 | Failure | Behavior |

@@ -13,6 +13,7 @@ py -3.11 -m venv .venv
 pip install -r requirements.txt
 Copy-Item .env.example .env
 # fill in paper ALPACA_API_KEY / ALPACA_SECRET_KEY in .env
+# (DATABASE_URL optional — empty uses a local SQLite file)
 pytest -q
 ```
 
@@ -90,7 +91,12 @@ exit reason and realized P&L. And the decision journal — for literally every
 candidate we ever evaluated, approved or rejected, you can see the AI score
 and the exact rationale behind the call."
 
-## 4:15 - 4:45 — Two bugs live testing actually found
+"This same journal lives in Supabase, not just a local file — GitHub
+Actions, this local dashboard, and an optional public copy hosted on Vercel
+all read and write the exact same live data. No separate sync step, no
+stale snapshot."
+
+## 4:15 - 4:45 — Bugs live testing actually found
 
 "Unit tests can't catch everything. Running this against a real paper
 account with the AI actually connected surfaced two real bugs: the AI was
@@ -101,10 +107,12 @@ only computed once per scan instead of per candidate, letting three
 positions open on the same symbol in one run. Both are fixed now, and both
 were only found by actually running it, not by writing more unit tests."
 
-If time allows, mention the scheduling lesson too: "We also found GitHub
-Actions' own cron scheduler doesn't reliably fire every 5 minutes — one run
-in several hours — so the agent is actually triggered by an external
-scheduler instead."
+If time allows, mention the infrastructure lessons too: "We also found
+GitHub Actions' own cron scheduler doesn't reliably fire every 5 minutes —
+one run in several hours — so the agent is actually triggered by an
+external scheduler instead. And wiring up the shared Supabase database
+surfaced a connection-string parameter our driver didn't actually support —
+found by testing against the real service, not assumed to work."
 
 ## 4:45 - 5:00 — Close
 

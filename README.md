@@ -181,6 +181,12 @@ To enable it:
    with body `{"ref":"main"}` and an `Authorization: Bearer <token>` header
    (a fine-grained PAT scoped to this repo, `Actions: Read and write`).
 
+To test outside market hours (e.g. verifying a new `DATABASE_URL` actually
+works from inside a GitHub Actions runner), trigger the workflow manually
+with `force_run: true` — `gh workflow run "Options Alpha Agent" -f force_run=true`
+— which bypasses the market-hours gate while `DRY_RUN` still governs
+whether anything is actually submitted.
+
 ## Found by live testing, not just unit tests
 
 Two real defects were found by actually running the agent against a live
