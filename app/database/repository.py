@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import (
     Column,
@@ -24,12 +26,6 @@ from app.execution.order_manager import ExecutionResult
 from app.execution.position_manager import ExitDecision
 from app.risk.risk_engine import RiskDecision
 from app.strategy.bull_put_spread import BullPutSpreadCandidate
-
-# Postgres-only: SQLite has no schema concept, so table definitions stay
-# schema-agnostic and the "alpaca" schema is applied via a Postgres-only
-# schema_translate_map in __init__ instead of being baked into the Table
-# objects themselves.
-POSTGRES_SCHEMA = "alpaca"
 
 metadata = MetaData()
 
@@ -71,12 +67,29 @@ trades_table = Table(
 )
 
 
+def _search_path_schema(url: str) -> str | None:
+    """Extracts the schema name from a `?options=-c search_path=<schema>`
+    query parameter, e.g. Supabase's convention of putting the target
+    schema directly in DATABASE_URL rather than hardcoding it in code:
+    `postgresql://...?options=-c%20search_path%3Dalpaca`."""
+    options = parse_qs(urlparse(url).query).get("options", [None])[0]
+    if not options:
+        return None
+    match = re.search(r"-c\s*search_path=([A-Za-z_][A-Za-z0-9_]*)", options)
+    return match.group(1) if match else None
+
+
 class DecisionRepository:
     """Works against local SQLite (default, used by tests and local dev) or a
     remote Postgres database such as Supabase (pass a `postgresql://...` URL)
-    — the same schema and queries run against either, via SQLAlchemy Core, so
-    GitHub Actions, local development and a hosted dashboard can all share one
-    journal instead of juggling a separate SQLite file per environment.
+    — the same table definitions and queries run against either, via
+    SQLAlchemy Core, so GitHub Actions, local development and a hosted
+    dashboard can all share one journal instead of juggling a separate
+    SQLite file per environment. On Postgres, which schema to use is read
+    directly from DATABASE_URL's `options=-c search_path=...` parameter
+    (Postgres resolves unqualified table names against it), not hardcoded
+    here — only the one-time `CREATE SCHEMA IF NOT EXISTS` bootstrap needs
+    to know the name, so it's parsed back out of the same URL.
     """
 
     def __init__(self, database_url: str | Path = "options_alpha.db") -> None:
@@ -85,9 +98,10 @@ class DecisionRepository:
             url = f"sqlite:///{url}"
         engine = create_engine(url, future=True)
         if engine.dialect.name.startswith("postgres"):
-            with engine.begin() as conn:
-                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {POSTGRES_SCHEMA}"))
-            engine = engine.execution_options(schema_translate_map={None: POSTGRES_SCHEMA})
+            schema = _search_path_schema(url)
+            if schema:
+                with engine.begin() as conn:
+                    conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
         self._engine = engine
         metadata.create_all(self._engine)
 

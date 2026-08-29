@@ -206,14 +206,19 @@ was mitigated deliberately rather than ignored.
 Core, so the same table definitions and queries work against local SQLite
 (the default — a separate file per environment) or a remote Postgres
 database such as Supabase, by setting `DATABASE_URL` to a `postgresql://...`
-connection string. On Postgres, tables are created under a dedicated
-`alpaca` Postgres schema (namespace) rather than the default `public` one —
-applied via a `schema_translate_map` at the engine level, not baked into the
-table definitions, since SQLite has no equivalent concept and must stay
-unaffected. With `DATABASE_URL` set, GitHub Actions, local development and a
-hosted dashboard all read and write the same journal instead of each
-holding its own disconnected copy — replacing the artifact-download
-workflow below with just querying the live database directly.
+connection string. Which Postgres schema (namespace) to use — a dedicated
+one instead of the default `public` — is read directly from that same URL's
+`options=-c search_path=<schema>` parameter (e.g.
+`...?options=-c%20search_path%3Dalpaca`) rather than hardcoded in code, so
+it's visible and changeable from `.env` alone. The one place code does need
+the schema name is a one-time `CREATE SCHEMA IF NOT EXISTS` bootstrap, which
+parses it back out of the URL instead of duplicating it as a constant.
+SQLite has no schema concept, so this parameter is simply absent from a
+`sqlite:///...` URL and nothing schema-related runs. With `DATABASE_URL`
+set, GitHub Actions, local development and a hosted dashboard all read and
+write the same journal instead of each holding its own disconnected copy —
+replacing the artifact-download workflow below with just querying the live
+database directly.
 
 **Publishing the journal as an artifact.** The workflow uploads
 `options_alpha.db` as a downloadable GitHub Actions artifact (in addition
