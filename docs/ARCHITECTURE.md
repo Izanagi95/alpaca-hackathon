@@ -171,6 +171,28 @@ other repos, no account-level access. It also carries a short expiration
 (through the end of the scoring window) and is revoked manually once the
 competition ends, rather than left live indefinitely.
 
+### Deployment options considered
+
+The scan-to-decision loop and position monitor are plain Python scripts
+with no framework lock-in, so several deployment shapes were viable. None
+of them is universally "correct" — the right choice depends on the
+time horizon, budget, and who is operationally responsible for uptime.
+
+| Option | Where secrets live | Uptime responsibility | Cost | Why (not) chosen here |
+|---|---|---|---|---|
+| **GitHub Actions + external scheduler (chosen)** | GitHub's encrypted Secrets store, decrypted only inside an ephemeral runner that lives ~1 minute per run | GitHub's infrastructure | Free (within Actions minutes quota) | No server to patch or secure, no persistent process holding credentials, matches a short (4-day) competition window. Trade-off: GitHub's own `schedule:` cron is unreliable at short intervals (see above), so an external scheduler is still needed to trigger it reliably — and that scheduler must hold a token, which is the one real weakness of this approach (mitigated by scope + expiration, not eliminated). |
+| **GitHub Actions native `schedule:` only** | Same as above | Same as above | Free | Simplest possible setup, but empirically unreliable (one run fired in several hours despite a valid 5-minute cron) — not viable alone for a scoring window where consistent execution matters. Kept as a redundant backup, not the primary trigger. |
+| **Local always-on machine** (`scripts/loop_forever.py`) | A local `.env` file | You, personally, for the whole window | Free (if the machine is already on) | Zero infrastructure to set up, but a laptop sleeping, losing network, or being closed for the night stops the whole agent — too fragile for an unattended multi-day window. |
+| **Small VPS** (e.g. a $4-6/mo droplet) | A `.env` file on a server that's reachable 24/7 | You — OS patching, SSH hardening, process supervision | ~$5-10/mo | Removes the third-party-scheduler token risk entirely, but trades it for a persistent, always-reachable box holding live credentials, plus real ops work (security updates, firewall, process restarts) for a project with a one-week horizon. More sense for a system meant to run indefinitely, not a hackathon window. |
+| **Serverless cloud** (AWS Lambda + EventBridge, or GCP Cloud Functions + Cloud Scheduler) | The cloud provider's own secret manager | The cloud provider | Effectively free at this call volume | Arguably the "best" long-term answer — native, reliable scheduling and secrets never leave the provider's ecosystem — but requires porting the scripts to a serverless entrypoint and standing up cloud infrastructure, which wasn't worth the setup time for a one-week deadline. Worth revisiting if this project continues past the hackathon. |
+| **Self-hosted GitHub Actions runner** | GitHub Secrets (same as the chosen option) | You, for the runner machine | Free (+ your own hardware/VPS) | Doesn't actually solve the reliability problem on its own — the runner still needs something to trigger it on schedule, so it just relocates the compute without removing the need for an external scheduler. |
+
+Given a one-week competition, zero budget, and no dedicated ops time,
+GitHub Actions triggered by an external scheduler was the best fit: no
+server to secure, ephemeral credential exposure instead of a persistent
+one, and a single documented, scoped weak point (the trigger token) that
+was mitigated deliberately rather than ignored.
+
 ## Data model
 
 - **decisions** — every candidate ever evaluated: market inputs, option
