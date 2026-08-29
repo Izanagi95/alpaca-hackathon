@@ -4,7 +4,7 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, quote, urlencode, urlparse, urlunsplit, urlsplit
 
 from sqlalchemy import (
     Column,
@@ -67,6 +67,21 @@ trades_table = Table(
 )
 
 
+def _strip_unsupported_query_params(url: str) -> str:
+    """Removes query parameters that libpq/psycopg2 doesn't recognize as
+    connection options — e.g. Supabase's `pgbouncer=true`, a hint meant for
+    other drivers (asyncpg/Prisma) to disable server-side prepared
+    statements, not a real libpq option. psycopg2 raises 'invalid dsn:
+    invalid connection option' if it's left in. `options` (used for
+    search_path) is preserved untouched."""
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    pairs = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True) if key != "pgbouncer"]
+    new_query = urlencode(pairs, quote_via=quote)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+
+
 def _search_path_schema(url: str) -> str | None:
     """Extracts the schema name from a `?options=-c search_path=<schema>`
     query parameter, e.g. Supabase's convention of putting the target
@@ -96,6 +111,7 @@ class DecisionRepository:
         url = str(database_url)
         if "://" not in url:
             url = f"sqlite:///{url}"
+        url = _strip_unsupported_query_params(url)
         engine = create_engine(url, future=True)
         if engine.dialect.name.startswith("postgres"):
             schema = _search_path_schema(url)
