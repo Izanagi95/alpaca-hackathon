@@ -202,6 +202,25 @@ was mitigated deliberately rather than ignored.
   dry-run); updated with `closed_at`, `exit_reason`, `realized_pnl` when
   `monitor_positions.py` triggers an exit.
 
+**Publishing the journal as an artifact.** The workflow uploads
+`options_alpha.db` as a downloadable GitHub Actions artifact (in addition
+to the `actions/cache` copy used to persist it between runs), so the real
+journal produced by the official run can be pulled locally
+(`gh run download`) and inspected with the same dashboard used in
+development. Checked before doing this: none of `BullPutSpreadCandidate`,
+`AIProposal` or `RiskDecision` — the only models ever serialized into the
+database — carry any key/secret/token/credential field, so the artifact
+itself never contains anything sensitive.
+
+What does change once the repository is made public (required for
+submission): GitHub Actions artifacts on a public repo are downloadable by
+anyone with the run URL, no authentication required — so the trade/decision
+journal becomes effectively public alongside the code, not just visible to
+judges. This is treated as consistent with the project's transparency
+principle (every decision is meant to be reconstructable) rather than as a
+leak to prevent, precisely because the content was checked and contains no
+credentials — only strikes, credit, AI scores and rationale.
+
 ## Fail-closed behavior
 
 | Failure | Behavior |
