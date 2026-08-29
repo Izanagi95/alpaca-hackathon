@@ -85,12 +85,15 @@ an order) once credentials are in `.env`:
    **Known limitation:** the regime-exit check currently reuses a fixed
    `"BULLISH"` regime instead of re-running the Market Analyst on every
    poll.
-8. **Trade journal** (`app/database/repository.py`) — two SQLite tables.
-   `decisions` records every candidate ever evaluated (approved or
-   rejected) with its full market/option inputs, AI proposal, rationale and
-   itemized risk checks. `trades` is opened only when an order is actually
-   submitted, and updated with `closed_at`/`exit_reason`/`realized_pnl`
-   when an exit rule fires.
+8. **Trade journal** (`app/database/repository.py`) — two tables, on
+   SQLAlchemy Core so the same code runs against local SQLite (default) or a
+   remote Postgres database (`DATABASE_URL=postgresql://...`, e.g. Supabase)
+   to share one journal across GitHub Actions, local development and a
+   hosted dashboard. `decisions` records every candidate ever evaluated
+   (approved or rejected) with its full market/option inputs, AI proposal,
+   rationale and itemized risk checks. `trades` is opened only when an order
+   is actually submitted, and updated with
+   `closed_at`/`exit_reason`/`realized_pnl` when an exit rule fires.
 9. **Dashboard** (`app/dashboard/app.py`) — `uvicorn app.dashboard.app:app --reload`,
    then open `http://127.0.0.1:8000`. Shows a live **Portfolio** section
    (equity, cash, buying power, daily P&L, degrading to "unavailable"

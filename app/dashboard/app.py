@@ -18,6 +18,14 @@ ACCOUNT_FETCH_TIMEOUT_SECONDS = 5.0
 app = FastAPI(title="Options Alpha Agent")
 
 
+def _database_target() -> str:
+    """DATABASE_URL (e.g. a Supabase postgresql:// URL) takes priority so the
+    hosted dashboard can share one journal with GitHub Actions and local
+    development; falls back to the local SQLite file (DATABASE_PATH) used in
+    development and tests."""
+    return os.getenv("DATABASE_URL") or str(DATABASE_PATH)
+
+
 def account_snapshot() -> dict[str, float] | None:
     """Live portfolio snapshot from Alpaca. Returns None if credentials are
     missing, paper mode is misconfigured, or the API is unreachable — the
@@ -44,7 +52,7 @@ def account_snapshot() -> dict[str, float] | None:
 
 
 def recent_decisions() -> list[dict[str, object]]:
-    repository = DecisionRepository(DATABASE_PATH)
+    repository = DecisionRepository(_database_target())
     try:
         return repository.list_recent()
     finally:
@@ -52,7 +60,7 @@ def recent_decisions() -> list[dict[str, object]]:
 
 
 def recent_trades() -> list[dict[str, object]]:
-    repository = DecisionRepository(DATABASE_PATH)
+    repository = DecisionRepository(_database_target())
     try:
         return repository.list_recent_trades()
     finally:

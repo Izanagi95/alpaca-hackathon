@@ -48,6 +48,11 @@ class Settings(BaseModel):
     featherless_api_key: str = Field(default="", repr=False)
     featherless_base_url: str = "https://api.featherless.ai/v1"
 
+    # Empty means "use the local SQLite file next to the scripts"; set to a
+    # postgresql://... URL (e.g. Supabase) to share one journal across
+    # GitHub Actions, local development and a hosted dashboard.
+    database_url: str = Field(default="", repr=False)
+
     @field_validator("max_portfolio_risk", "max_position_risk", "max_daily_loss")
     @classmethod
     def validate_risk_fraction(cls, value: float) -> float:
@@ -139,6 +144,7 @@ class Settings(BaseModel):
             ai_model=os.getenv("AI_MODEL", "claude-sonnet-5"),
             featherless_api_key=os.getenv("FEATHERLESS_API_KEY", ""),
             featherless_base_url=os.getenv("FEATHERLESS_BASE_URL", "https://api.featherless.ai/v1"),
+            database_url=os.getenv("DATABASE_URL", ""),
         )
 
     def require_paper_mode(self) -> None:

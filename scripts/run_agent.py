@@ -85,7 +85,7 @@ def main() -> int:
     market_analyst = MarketAnalyst(market_data)
     scanner = OptionsScanner(options_data, settings)
 
-    journal = DecisionRepository(PROJECT_ROOT / "options_alpha.db")
+    journal = DecisionRepository(settings.database_url or PROJECT_ROOT / "options_alpha.db")
     ai_layer = AIDecisionLayer(_build_ai_provider(settings))
     order_manager = OrderManager(settings, clients)
     workflow = TradeWorkflow(ai_layer, RiskEngine(settings), order_manager, journal)

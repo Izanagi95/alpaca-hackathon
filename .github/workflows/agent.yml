@@ -40,6 +40,7 @@ jobs:
       MIN_CREDIT: ${{ vars.MIN_CREDIT || '0.25' }}
       MIN_VOLUME: ${{ vars.MIN_VOLUME || '50' }}
       MIN_AI_SCORE: ${{ vars.MIN_AI_SCORE || '75' }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +48,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      # The cache/save/artifact steps below only apply when DATABASE_URL is
+      # unset (local SQLite fallback) — with DATABASE_URL pointing at
+      # Supabase, no local options_alpha.db file is ever created, so these
+      # steps harmlessly find nothing to restore/save/publish.
       - name: Restore trade journal
         uses: actions/cache/restore@v4
         with:

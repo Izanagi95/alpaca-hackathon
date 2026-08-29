@@ -202,6 +202,15 @@ was mitigated deliberately rather than ignored.
   dry-run); updated with `closed_at`, `exit_reason`, `realized_pnl` when
   `monitor_positions.py` triggers an exit.
 
+**Shared database (optional).** `DecisionRepository` runs on SQLAlchemy
+Core, so the same schema and queries work against local SQLite (the
+default — a separate file per environment) or a remote Postgres database
+such as Supabase, by setting `DATABASE_URL` to a `postgresql://...`
+connection string. With it set, GitHub Actions, local development and a
+hosted dashboard all read and write the same journal instead of each
+holding its own disconnected copy — replacing the artifact-download
+workflow below with just querying the live database directly.
+
 **Publishing the journal as an artifact.** The workflow uploads
 `options_alpha.db` as a downloadable GitHub Actions artifact (in addition
 to the `actions/cache` copy used to persist it between runs), so the real
