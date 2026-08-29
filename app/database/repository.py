@@ -13,6 +13,7 @@ from sqlalchemy import (
     MetaData,
     Table,
     Text,
+    case,
     create_engine,
     func,
     insert,
@@ -221,6 +222,39 @@ class DecisionRepository:
         with self._engine.connect() as conn:
             rows = conn.execute(
                 select(*columns).order_by(decisions_table.c.id.desc()).limit(limit)
+            ).all()
+        return [dict(row._mapping) for row in rows]
+
+    def daily_decision_counts(self, days: int = 14) -> list[dict[str, object]]:
+        """Scanned/approved counts per day (`timestamp`'s first 10 chars, i.e.
+        its date — `substr` is standard SQL and works identically on SQLite
+        and Postgres, avoiding dialect-specific date functions)."""
+        day = func.substr(decisions_table.c.timestamp, 1, 10).label("day")
+        approved = func.sum(case((decisions_table.c.final_decision == "APPROVE", 1), else_=0)).label("approved")
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                select(day, func.count().label("scanned"), approved)
+                .group_by(day)
+                .order_by(day.desc())
+                .limit(days)
+            ).all()
+        return [dict(row._mapping) for row in rows]
+
+    def daily_trade_pnl(self, days: int = 14) -> list[dict[str, object]]:
+        """Closed-trade counts and realized P&L per day (grouped by
+        `closed_at`'s date). Only trades that have actually closed are
+        included — open positions have no realized P&L yet."""
+        day = func.substr(trades_table.c.closed_at, 1, 10).label("day")
+        wins = func.sum(case((trades_table.c.realized_pnl > 0, 1), else_=0)).label("wins")
+        losses = func.sum(case((trades_table.c.realized_pnl < 0, 1), else_=0)).label("losses")
+        pnl = func.sum(trades_table.c.realized_pnl).label("realized_pnl")
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                select(day, func.count().label("closed"), wins, losses, pnl)
+                .where(trades_table.c.closed_at.is_not(None))
+                .group_by(day)
+                .order_by(day.desc())
+                .limit(days)
             ).all()
         return [dict(row._mapping) for row in rows]
 

@@ -99,10 +99,14 @@ an order) once credentials are in `.env`:
    (equity, cash, buying power, daily P&L, degrading to "unavailable"
    rather than crashing if the API is unreachable — `DASHBOARD_FETCH_ACCOUNT=false`
    disables it for offline demos), **Agent activity** (scanned/approved/
-   rejected counts), the full trade journal, and the decision journal with
-   each candidate's AI score, final decision, risk flags and rationale.
-   `/api/decisions`, `/api/trades` and `/api/account` return the same data
-   as JSON.
+   rejected counts), **Daily KPIs** (scanned/approved/approval rate/closed
+   trades/wins/losses/realized P&L per day — grouped by date directly in
+   SQL, portable across SQLite and Postgres — with `?days=7/14/30/90`
+   filters, so "is everything going okay" doesn't require scrolling raw
+   rows), the full trade journal, and the decision journal with each
+   candidate's AI score, final decision, risk flags and rationale.
+   `/api/decisions`, `/api/trades`, `/api/account` and `/api/daily-kpis`
+   return the same data as JSON.
 
    **Hosting it publicly (Vercel):** `api/index.py` re-exports the same
    FastAPI `app` with no logic changes, and `vercel.json` routes every

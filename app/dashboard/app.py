@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 
 from app.alpaca.client import AlpacaClients
@@ -67,6 +67,36 @@ def recent_trades() -> list[dict[str, object]]:
         repository.close()
 
 
+def daily_kpis(days: int) -> list[dict[str, object]]:
+    """Per-day scan/approve counts merged with per-day closed-trade P&L, so
+    'is everything going okay today' doesn't require scrolling raw rows."""
+    repository = DecisionRepository(_database_target())
+    try:
+        decisions_by_day = {row["day"]: row for row in repository.daily_decision_counts(days=days)}
+        trades_by_day = {row["day"]: row for row in repository.daily_trade_pnl(days=days)}
+    finally:
+        repository.close()
+
+    days_seen = sorted(set(decisions_by_day) | set(trades_by_day), reverse=True)
+    merged = []
+    for day in days_seen:
+        d = decisions_by_day.get(day, {"scanned": 0, "approved": 0})
+        t = trades_by_day.get(day, {"closed": 0, "wins": 0, "losses": 0, "realized_pnl": None})
+        scanned = d["scanned"]
+        approved = d["approved"]
+        merged.append({
+            "day": day,
+            "scanned": scanned,
+            "approved": approved,
+            "approval_pct": round(approved / scanned * 100, 1) if scanned else 0.0,
+            "closed": t["closed"],
+            "wins": t["wins"],
+            "losses": t["losses"],
+            "realized_pnl": t["realized_pnl"],
+        })
+    return merged
+
+
 @app.get("/api/decisions")
 def decisions() -> list[dict[str, object]]:
     return recent_decisions()
@@ -75,6 +105,11 @@ def decisions() -> list[dict[str, object]]:
 @app.get("/api/trades")
 def trades() -> list[dict[str, object]]:
     return recent_trades()
+
+
+@app.get("/api/daily-kpis")
+def daily_kpis_endpoint(days: int = Query(default=14, ge=1, le=365)) -> list[dict[str, object]]:
+    return daily_kpis(days)
 
 
 @app.get("/api/account")
@@ -87,7 +122,7 @@ def _escape(text: str) -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard() -> str:
+def dashboard(days: int = Query(default=14, ge=1, le=365)) -> str:
     decision_rows = recent_decisions()
     approved = sum(1 for d in decision_rows if d["final_decision"] == "APPROVE")
     rejected = len(decision_rows) - approved
@@ -132,6 +167,25 @@ def dashboard() -> str:
         )
     trades_table = "".join(trade_rows) or '<tr><td colspan="10">No trades recorded</td></tr>'
 
+    kpi_rows = []
+    for row in daily_kpis(days):
+        pnl = row["realized_pnl"]
+        pnl_display = f"${pnl:,.2f}" if pnl is not None else "-"
+        pnl_class = "" if pnl is None else ("pnl-positive" if pnl >= 0 else "pnl-negative")
+        kpi_rows.append(
+            "<tr><td>{day}</td><td>{scanned}</td><td>{approved}</td><td>{approval_pct}%</td>"
+            "<td>{closed}</td><td>{wins}</td><td>{losses}</td><td class=\"{pnl_class}\">{pnl}</td></tr>".format(
+                day=row["day"], scanned=row["scanned"], approved=row["approved"],
+                approval_pct=row["approval_pct"], closed=row["closed"], wins=row["wins"],
+                losses=row["losses"], pnl_class=pnl_class, pnl=pnl_display,
+            )
+        )
+    kpi_table = "".join(kpi_rows) or '<tr><td colspan="8">No data yet for this window</td></tr>'
+    day_filters = "".join(
+        f'<a href="/?days={option}"{" style=\"font-weight:700\"" if option == days else ""}>{option}d</a>'
+        for option in (7, 14, 30, 90)
+    )
+
     account_data = account_snapshot()
     if account_data is not None:
         pnl_class = "pnl-positive" if account_data["daily_pnl"] >= 0 else "pnl-negative"
@@ -145,7 +199,7 @@ def dashboard() -> str:
 
     return f"""<!doctype html>
 <html><head><title>Options Alpha Agent</title>
-<style>body{{font-family:Segoe UI,sans-serif;background:#f4f1ea;color:#1d2925;margin:40px}}main{{max-width:1200px;margin:auto}}header{{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #d9d0c2;padding-bottom:18px}}.badge{{background:#176b5b;color:white;padding:8px 12px;border-radius:4px;font-weight:700}}.stats{{display:flex;gap:16px;margin-top:20px;flex-wrap:wrap}}.stat{{background:white;padding:14px 20px;border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.08)}}.stat b{{display:block;font-size:22px}}.pnl-positive{{color:#176b5b}}.pnl-negative{{color:#b3402c}}table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;font-size:14px}}th,td{{padding:10px 12px;text-align:left;border-bottom:1px solid #e7e0d6}}th{{background:#1d2925;color:white}}h2{{margin-top:36px}}</style></head>
+<style>body{{font-family:Segoe UI,sans-serif;background:#f4f1ea;color:#1d2925;margin:40px}}main{{max-width:1200px;margin:auto}}header{{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #d9d0c2;padding-bottom:18px}}.badge{{background:#176b5b;color:white;padding:8px 12px;border-radius:4px;font-weight:700}}.stats{{display:flex;gap:16px;margin-top:20px;flex-wrap:wrap}}.stat{{background:white;padding:14px 20px;border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.08)}}.stat b{{display:block;font-size:22px}}.pnl-positive{{color:#176b5b}}.pnl-negative{{color:#b3402c}}table{{width:100%;border-collapse:collapse;background:white;margin-top:20px;font-size:14px}}th,td{{padding:10px 12px;text-align:left;border-bottom:1px solid #e7e0d6}}th{{background:#1d2925;color:white}}h2{{margin-top:36px;display:flex;align-items:center;gap:16px}}.day-filters{{font-size:13px;display:flex;gap:10px}}.day-filters a{{color:#176b5b;text-decoration:none}}.day-filters a:hover{{text-decoration:underline}}</style></head>
 <body><main><header><div><h1>Options Alpha Agent</h1><p>Autonomous Bull Put Spread agent — decision journal and trade log</p></div><span class="badge">PAPER TRADING MODE — NO REAL CAPITAL</span></header>
 <h2>Portfolio</h2>
 <div class="stats">{portfolio_stats}
@@ -156,6 +210,8 @@ def dashboard() -> str:
   <div class="stat">Approved<b>{approved}</b></div>
   <div class="stat">Rejected<b>{rejected}</b></div>
 </div>
+<h2>Daily KPIs<span class="day-filters">{day_filters}</span></h2>
+<table><thead><tr><th>Day</th><th>Scanned</th><th>Approved</th><th>Approval %</th><th>Closed</th><th>Wins</th><th>Losses</th><th>Realized P&amp;L</th></tr></thead><tbody>{kpi_table}</tbody></table>
 <h2>Positions &amp; trades</h2>
 <table><thead><tr><th>Opened</th><th>Symbol</th><th>Expiration</th><th>Short/Long strike</th><th>Contracts</th><th>Entry credit</th><th>Status</th><th>Closed</th><th>Exit reason</th><th>Realized P&amp;L</th></tr></thead><tbody>{trades_table}</tbody></table>
 <h2>Decision journal — why each candidate was approved or rejected</h2>
