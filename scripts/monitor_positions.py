@@ -18,6 +18,9 @@ PROJECT_ROOT = Path(__file__).parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from alpaca.common.exceptions import APIError
+from alpaca.trading.enums import OrderStatus
+
 from app.alpaca.client import AlpacaClients
 from app.alpaca.options import OptionsDataService
 from app.config.settings import Settings
@@ -25,6 +28,20 @@ from app.database.repository import DecisionRepository
 from app.execution.order_manager import OrderManager
 from app.execution.position_manager import ManagedPosition, PositionManager
 from app.strategy.bull_put_spread import BullPutSpreadCandidate
+
+_TERMINAL_UNFILLED_STATUSES = {OrderStatus.CANCELED, OrderStatus.EXPIRED, OrderStatus.REJECTED}
+
+
+def _opening_order_status(clients: AlpacaClients, trade: dict[str, object]) -> OrderStatus | None:
+    """The opening multi-leg order's status, or None if it can't be looked
+    up. A submitted order does not mean a position exists yet — trying to
+    close a not-yet-filled spread makes Alpaca infer the wrong position
+    intent (see incident: 'position intent mismatch, inferred: buy_to_open,
+    specified: buy_to_close')."""
+    try:
+        return clients.trading.get_order_by_client_id(str(trade["client_order_id"])).status
+    except APIError:
+        return None
 
 
 def _leg_symbol(symbol: str, expiration: date, strike: float) -> str:
@@ -59,6 +76,16 @@ def main() -> int:
     print(f"MONITOR START open_trades={len(open_trades)}")
 
     for trade in open_trades:
+        if clients is not None and trade["execution_status"] == "submitted":
+            status = _opening_order_status(clients, trade)
+            if status != OrderStatus.FILLED:
+                if status in _TERMINAL_UNFILLED_STATUSES:
+                    journal.record_trade_unfilled(int(trade["id"]), status.value)
+                    print(f"CLOSE trade_id={trade['id']} reason=opening_order_{status.value}")
+                else:
+                    print(f"SKIP trade_id={trade['id']} reason=opening_order_not_filled_yet status={status}")
+                continue
+
         expiration = date.fromisoformat(str(trade["expiration"]))
         dte = (expiration - date.today()).days
 

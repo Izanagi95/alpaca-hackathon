@@ -209,11 +209,28 @@ class DecisionRepository:
                 )
             )
 
+    def record_trade_unfilled(self, trade_id: int, order_status: str) -> None:
+        """Marks a trade whose opening order never became a real position
+        (canceled/expired/rejected before fill) as closed with zero P&L, so
+        list_open_trades() stops handing it to the monitor forever."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                update(trades_table)
+                .where(trades_table.c.id == trade_id)
+                .values(
+                    closed_at=datetime.now(timezone.utc).isoformat(),
+                    exit_reason=f"opening_order_{order_status}",
+                    realized_pnl=0.0,
+                    execution_status=f"never_filled_{order_status}",
+                )
+            )
+
     def list_open_trades(self) -> list[dict[str, object]]:
         columns = [
             trades_table.c.id, trades_table.c.opened_at, trades_table.c.symbol, trades_table.c.expiration,
             trades_table.c.short_strike, trades_table.c.long_strike, trades_table.c.contracts,
             trades_table.c.entry_credit, trades_table.c.max_profit, trades_table.c.max_loss,
+            trades_table.c.client_order_id, trades_table.c.execution_status,
         ]
         with self._engine.connect() as conn:
             rows = conn.execute(select(*columns).where(trades_table.c.closed_at.is_(None))).all()
