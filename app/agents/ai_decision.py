@@ -27,7 +27,8 @@ class AIDecisionLayer:
         try:
             response = self._provider(candidate.model_dump(mode="json"))
             return AIProposal.model_validate(response)
-        except (ValidationError, TypeError, ValueError, RuntimeError):
+        except (ValidationError, TypeError, ValueError, RuntimeError) as error:
+            print(f"AI_ERROR symbol={candidate.symbol} error={error}")
             return AIProposal(
                 decision="REJECT",
                 score=0,

@@ -8,10 +8,14 @@ treated as a decision by itself.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Mapping
 from typing import Any
 
 from app.config.settings import Settings
+
+_MAX_ATTEMPTS = 2
+_RETRY_DELAY_SECONDS = 1.0
 
 try:
     from openai import OpenAI
@@ -45,16 +49,28 @@ def build_featherless_provider(settings: Settings) -> Callable[[dict[str, Any]],
     client = OpenAI(api_key=settings.featherless_api_key, base_url=settings.featherless_base_url)
 
     def provider(candidate_payload: dict[str, Any]) -> Mapping[str, Any]:
-        response = client.chat.completions.create(
-            model=settings.ai_model,
-            max_tokens=1024,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": _format_candidate(candidate_payload)},
-            ],
-        )
-        content = response.choices[0].message.content or ""
-        return json.loads(_strip_code_fence(content))
+        # A shared Featherless key under concurrent load (multiple bots scanning
+        # at once) occasionally returns an empty/truncated completion rather than
+        # a hard error — one immediate retry recovers most of those without
+        # masking a genuinely broken response as a real AI rejection.
+        last_error: Exception | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                response = client.chat.completions.create(
+                    model=settings.ai_model,
+                    max_tokens=1024,
+                    messages=[
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": _format_candidate(candidate_payload)},
+                    ],
+                )
+                content = response.choices[0].message.content or ""
+                return json.loads(_strip_code_fence(content))
+            except Exception as error:  # noqa: BLE001 - any failure here is a retry candidate
+                last_error = error
+                if attempt < _MAX_ATTEMPTS - 1:
+                    time.sleep(_RETRY_DELAY_SECONDS)
+        raise RuntimeError(f"Featherless call failed after {_MAX_ATTEMPTS} attempts: {last_error}") from last_error
 
     return provider
 
