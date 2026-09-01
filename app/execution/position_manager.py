@@ -42,10 +42,19 @@ class PositionManager:
         self._settings = settings
 
     def evaluate_exit(self, position: ManagedPosition) -> ExitDecision:
+        # current_pnl is the position total, while max_profit/max_loss are
+        # per-contract (that is how the journal stores them, and how
+        # run_agent.py reads them back), so the thresholds have to be scaled
+        # to the position size too. Comparing the total against a
+        # per-contract threshold silently divided both by `contracts` —
+        # stopping out at ~12% of max loss on a 6-lot instead of 50%.
+        contracts = max(position.contracts, 1)
+        profit_target = position.max_profit * contracts * self._settings.profit_target_fraction
+        stop_loss = position.max_loss * contracts * self._settings.stop_loss_fraction
         pnl = position.current_pnl
-        if pnl >= position.max_profit * self._settings.profit_target_fraction:
+        if pnl >= profit_target:
             return ExitDecision(True, ExitReason.PROFIT_TARGET, pnl)
-        if pnl <= -position.max_loss * self._settings.stop_loss_fraction:
+        if pnl <= -stop_loss:
             return ExitDecision(True, ExitReason.STOP_LOSS, pnl)
         if position.dte <= self._settings.exit_before_expiry_dte:
             return ExitDecision(True, ExitReason.TIME_EXIT, pnl)
