@@ -14,6 +14,10 @@ class ExitReason(StrEnum):
     HOLD = "hold"
 
 
+BULLISH_REGIMES = {"BULLISH", "NEUTRAL-BULLISH"}
+BEARISH_REGIMES = {"BEARISH", "NEUTRAL-BEARISH"}
+
+
 @dataclass(frozen=True)
 class ManagedPosition:
     symbol: str
@@ -24,6 +28,17 @@ class ManagedPosition:
     max_loss: float
     dte: int
     market_regime: str
+    # A bull put spread wants the market up or flat; a bear call spread wants
+    # the opposite, so the regime exit has to be read against the direction
+    # the position was opened in rather than assuming bullish.
+    strategy: str = "bull_put_spread"
+
+    @property
+    def regime_turned_against_position(self) -> bool:
+        regime = self.market_regime.upper()
+        if self.strategy == "bear_call_spread":
+            return regime not in BEARISH_REGIMES
+        return regime not in BULLISH_REGIMES
 
     @property
     def current_pnl(self) -> float:
@@ -58,6 +73,6 @@ class PositionManager:
             return ExitDecision(True, ExitReason.STOP_LOSS, pnl)
         if position.dte <= self._settings.exit_before_expiry_dte:
             return ExitDecision(True, ExitReason.TIME_EXIT, pnl)
-        if position.market_regime.upper() not in {"BULLISH", "NEUTRAL-BULLISH"}:
+        if position.regime_turned_against_position:
             return ExitDecision(True, ExitReason.REGIME_EXIT, pnl)
         return ExitDecision(False, ExitReason.HOLD, pnl)

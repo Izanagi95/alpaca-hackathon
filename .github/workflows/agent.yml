@@ -44,6 +44,13 @@ jobs:
       MIN_CREDIT: ${{ vars.MIN_CREDIT || '0.25' }}
       MIN_VOLUME: ${{ vars.MIN_VOLUME || '50' }}
       MIN_AI_SCORE: ${{ vars.MIN_AI_SCORE || '75' }}
+      # Exit rule tuning. A defined-risk spread caps its own loss, so a tight
+      # stop mostly converts drawdowns that would have recovered into realised
+      # losses — the simulated backtest scores 0.60/0.50 at +3.7k over a year
+      # against +9.4k for 0.50/1.00, and level over the last six months.
+      PROFIT_TARGET_FRACTION: ${{ vars.PROFIT_TARGET_FRACTION || '0.60' }}
+      STOP_LOSS_FRACTION: ${{ vars.STOP_LOSS_FRACTION || '0.50' }}
+      EXIT_BEFORE_EXPIRY_DTE: ${{ vars.EXIT_BEFORE_EXPIRY_DTE || '7' }}
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4

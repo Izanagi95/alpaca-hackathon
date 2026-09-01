@@ -28,13 +28,22 @@ import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from app.backtest.black_scholes import put_delta, put_price
+from app.backtest.black_scholes import call_delta, call_price, put_delta, put_price
 from app.config.settings import Settings
-from app.execution.position_manager import ExitReason, ManagedPosition, PositionManager
+from app.execution.position_manager import (
+    BEARISH_REGIMES,
+    BULLISH_REGIMES,
+    ExitReason,
+    ManagedPosition,
+    PositionManager,
+)
 from app.strategy.position_sizing import calculate_contracts
 
 TRADING_DAYS_PER_YEAR = 252
 _STRIKE_STEP_FRACTION = 0.01  # grid search step, as a fraction of spot price
+
+BULL_PUT = "bull_put_spread"
+BEAR_CALL = "bear_call_spread"
 
 
 @dataclass(frozen=True)
@@ -48,6 +57,20 @@ class SimulatedTrade:
     entry_credit: float
     exit_reason: str
     realized_pnl: float
+    strategy: str = BULL_PUT
+
+
+def _spread_debit(strategy: str, spot: float, short_strike: float, long_strike: float, time_to_expiry: float, volatility: float) -> float:
+    """What it costs to buy the spread back: short leg's price minus long
+    leg's, priced with the option type the spread is actually made of."""
+    price = call_price if strategy == BEAR_CALL else put_price
+    return price(spot, short_strike, time_to_expiry, volatility) - price(spot, long_strike, time_to_expiry, volatility)
+
+
+def _settlement_debit(strategy: str, spot: float, short_strike: float, long_strike: float) -> float:
+    if strategy == BEAR_CALL:
+        return max(spot - short_strike, 0.0) - max(spot - long_strike, 0.0)
+    return max(short_strike - spot, 0.0) - max(long_strike - spot, 0.0)
 
 
 @dataclass
@@ -78,13 +101,20 @@ def _regime(closes: list[float]) -> str:
     return "NEUTRAL-BULLISH" if short_ma >= long_ma else "NEUTRAL-BEARISH"
 
 
-def _find_short_strike(spot: float, time_to_expiry_years: float, volatility: float, settings: Settings) -> float | None:
+def _find_short_strike(spot: float, time_to_expiry_years: float, volatility: float, settings: Settings, strategy: str = BULL_PUT) -> float | None:
+    """The short strike sits out of the money on the side the spread is
+    betting against: below spot for a bull put, above it for a bear call."""
     target_delta = (settings.target_short_delta_min + settings.target_short_delta_max) / 2
     step = max(spot * _STRIKE_STEP_FRACTION, 0.5)
     best_strike, best_diff = None, float("inf")
-    strike = spot * 0.5
-    while strike < spot:
-        delta = put_delta(spot, strike, time_to_expiry_years, volatility)
+
+    if strategy == BEAR_CALL:
+        strike, limit, delta_of = spot + step, spot * 1.5, call_delta
+    else:
+        strike, limit, delta_of = spot * 0.5, spot, put_delta
+
+    while strike < limit:
+        delta = delta_of(spot, strike, time_to_expiry_years, volatility)
         diff = abs(abs(delta) - target_delta)
         if diff < best_diff:
             best_strike, best_diff = strike, diff
@@ -95,6 +125,7 @@ def _find_short_strike(spot: float, time_to_expiry_years: float, volatility: flo
 def simulate_symbol(
     symbol: str, dates: list[date], closes: list[float], settings: Settings,
     starting_equity: float = 100_000.0, intraday_by_date: dict[date, list[float]] | None = None,
+    allow_bear_call: bool = True,
 ) -> BacktestResult:
     """intraday_by_date, when given, maps each trading date to its sequence of
     real intraday close prices (e.g. 5-minute bars). Exit rules are then
@@ -118,24 +149,32 @@ def simulate_symbol(
         entry_date = dates[i]
         expiration_date = entry_date + timedelta(days=target_dte)
 
-        if regime not in {"BULLISH", "NEUTRAL-BULLISH"} or volatility <= 0:
+        # Trade with the detected regime rather than only in bullish tape:
+        # a bull put spread when the market is rising, its mirror image when
+        # it is falling. Previously every bearish day was simply skipped.
+        if regime in BULLISH_REGIMES:
+            strategy = BULL_PUT
+        elif allow_bear_call and regime in BEARISH_REGIMES:
+            strategy = BEAR_CALL
+        else:
+            i += 1
+            continue
+        if volatility <= 0:
             i += 1
             continue
 
         spot = closes[i]
         time_to_expiry = target_dte / 365
-        short_strike = _find_short_strike(spot, time_to_expiry, volatility, settings)
+        short_strike = _find_short_strike(spot, time_to_expiry, volatility, settings, strategy)
         if short_strike is None:
             i += 1
             continue
-        long_strike = short_strike - settings.spread_width
+        long_strike = short_strike + settings.spread_width if strategy == BEAR_CALL else short_strike - settings.spread_width
         if long_strike <= 0:
             i += 1
             continue
 
-        entry_credit = put_price(spot, short_strike, time_to_expiry, volatility) - put_price(
-            spot, long_strike, time_to_expiry, volatility
-        )
+        entry_credit = _spread_debit(strategy, spot, short_strike, long_strike, time_to_expiry, volatility)
         if entry_credit < settings.min_credit:
             i += 1
             continue
@@ -152,7 +191,7 @@ def simulate_symbol(
         exit_index, exit_reason, exit_pnl = _walk_position(
             dates, closes, i, expiration_date, short_strike, long_strike,
             entry_credit, contracts, volatility, settings, position_manager,
-            intraday_by_date,
+            intraday_by_date, strategy,
         )
 
         equity += exit_pnl
@@ -161,6 +200,7 @@ def simulate_symbol(
                 symbol=symbol, entry_date=entry_date, exit_date=dates[exit_index],
                 short_strike=short_strike, long_strike=long_strike, contracts=contracts,
                 entry_credit=round(entry_credit, 4), exit_reason=exit_reason, realized_pnl=round(exit_pnl, 2),
+                strategy=strategy,
             )
         )
         result.equity_curve.append((dates[exit_index], round(equity, 2)))
@@ -174,7 +214,7 @@ def _walk_position(
     dates: list[date], closes: list[float], entry_index: int, expiration_date: date,
     short_strike: float, long_strike: float, entry_credit: float, contracts: int,
     volatility: float, settings: Settings, position_manager: PositionManager,
-    intraday_by_date: dict[date, list[float]] | None = None,
+    intraday_by_date: dict[date, list[float]] | None = None, strategy: str = BULL_PUT,
 ) -> tuple[int, str, float]:
     max_loss = (settings.spread_width - entry_credit) * 100
     max_profit = entry_credit * 100
@@ -196,12 +236,11 @@ def _walk_position(
         intraday_spots = intraday_by_date.get(dates[j]) or [closes[j]]
 
         for spot in intraday_spots:
-            current_debit = put_price(spot, short_strike, time_to_expiry, volatility) - put_price(
-                spot, long_strike, time_to_expiry, volatility
-            )
+            current_debit = _spread_debit(strategy, spot, short_strike, long_strike, time_to_expiry, volatility)
             position = ManagedPosition(
                 symbol="", contracts=contracts, entry_credit=entry_credit, current_debit=current_debit,
                 max_profit=max_profit, max_loss=max_loss, dte=remaining_days, market_regime=regime_today,
+                strategy=strategy,
             )
             exit_decision = position_manager.evaluate_exit(position)
             if exit_decision.should_exit:
@@ -209,8 +248,6 @@ def _walk_position(
         j += 1
 
     settle_index = min(j, len(dates) - 1)
-    intrinsic_short = max(short_strike - closes[settle_index], 0.0)
-    intrinsic_long = max(long_strike - closes[settle_index], 0.0)
-    settle_debit = intrinsic_short - intrinsic_long
+    settle_debit = _settlement_debit(strategy, closes[settle_index], short_strike, long_strike)
     settle_pnl = round((entry_credit - settle_debit) * 100 * contracts, 2)
     return settle_index, ExitReason.TIME_EXIT.value, settle_pnl
