@@ -237,15 +237,29 @@ class DecisionRepository:
                 .values(closed_at=datetime.now(timezone.utc).isoformat(), execution_status="closed")
             )
 
-    def record_close_order_failed(self, trade_id: int) -> None:
+    def record_close_order_failed(self, trade_id: int, remaining_contracts: int | None = None) -> None:
         """Puts a trade back under management after its closing order died
-        (canceled/expired/rejected) without filling — the position is still
-        open at the broker, so the exit has to be re-evaluated and re-sent."""
+        (canceled/expired/rejected) — whatever did not close is still open at
+        the broker, so the exit has to be re-evaluated and re-sent, for the
+        remaining size if the close filled only partially."""
+        values: dict[str, object] = {
+            "execution_status": "submitted",
+            "close_client_order_id": None,
+            "exit_reason": None,
+            "realized_pnl": None,
+        }
+        if remaining_contracts is not None and remaining_contracts > 0:
+            values["contracts"] = remaining_contracts
+        with self._engine.begin() as conn:
+            conn.execute(update(trades_table).where(trades_table.c.id == trade_id).values(**values))
+
+    def record_partial_fill(self, trade_id: int, filled_contracts: int) -> None:
+        """Resizes a trade to the contracts that actually filled, so exit
+        thresholds and any closing order match the real position rather than
+        the size that was originally requested."""
         with self._engine.begin() as conn:
             conn.execute(
-                update(trades_table)
-                .where(trades_table.c.id == trade_id)
-                .values(execution_status="submitted", close_client_order_id=None, exit_reason=None, realized_pnl=None)
+                update(trades_table).where(trades_table.c.id == trade_id).values(contracts=filled_contracts)
             )
 
     def record_trade_unfilled(self, trade_id: int, order_status: str) -> None:

@@ -32,15 +32,20 @@ from app.strategy.bull_put_spread import BullPutSpreadCandidate
 _TERMINAL_UNFILLED_STATUSES = {OrderStatus.CANCELED, OrderStatus.EXPIRED, OrderStatus.REJECTED}
 
 
-def _order_status(clients: AlpacaClients, client_order_id: object) -> OrderStatus | None:
-    """An order's status, or None if it can't be looked up. A submitted order
-    does not mean the position changed yet — acting as if it did makes Alpaca
-    infer the wrong position intent (see incident: 'position intent mismatch,
-    inferred: buy_to_open, specified: buy_to_close')."""
+def _order_state(clients: AlpacaClients, client_order_id: object) -> tuple[OrderStatus | None, int]:
+    """An order's status and how many contracts actually filled, or
+    (None, 0) if it can't be looked up. A submitted order does not mean the
+    position changed yet — acting as if it did makes Alpaca infer the wrong
+    position intent (see incident: 'position intent mismatch, inferred:
+    buy_to_open, specified: buy_to_close'). The filled quantity matters
+    separately from the status: a DAY order that fills 2 of 6 contracts and
+    is then cancelled at the close reports CANCELED while leaving a real
+    2-contract position behind."""
     try:
-        return clients.trading.get_order_by_client_id(str(client_order_id)).status
+        order = clients.trading.get_order_by_client_id(str(client_order_id))
     except APIError:
-        return None
+        return None, 0
+    return order.status, int(float(order.filled_qty or 0))
 
 
 def _leg_symbol(symbol: str, expiration: date, strike: float) -> str:
@@ -75,29 +80,49 @@ def main() -> int:
     print(f"MONITOR START open_trades={len(open_trades)}")
 
     for trade in open_trades:
+        # A dry run and a live run share one journal (the same Supabase
+        # database backs GitHub Actions and local development), so each must
+        # only touch its own rows. Without this, a local DRY_RUN=true monitor
+        # pass would stamp real open positions closed with a fake zero P&L
+        # and strand them at the broker with nothing watching them.
+        if (trade["execution_status"] == "dry_run") != settings.dry_run:
+            print(f"SKIP trade_id={trade['id']} reason=mode_mismatch row={trade['execution_status']} dry_run={settings.dry_run}")
+            continue
+
         if clients is not None and trade["execution_status"] == "closing":
-            status = _order_status(clients, trade["close_client_order_id"])
+            status, filled = _order_state(clients, trade["close_client_order_id"])
             if status == OrderStatus.FILLED:
                 journal.record_trade_close_filled(int(trade["id"]))
                 print(f"CLOSED trade_id={trade['id']} symbol={trade['symbol']} close_order=filled")
             elif status in _TERMINAL_UNFILLED_STATUSES:
-                # The position is still open at the broker; re-arm it so the
-                # exit is re-evaluated and re-sent at a current price.
-                journal.record_close_order_failed(int(trade["id"]))
-                print(f"REARM trade_id={trade['id']} reason=close_order_{status.value}")
+                # Whatever did not close is still open at the broker, so
+                # re-arm the trade for that remainder and let the exit be
+                # re-evaluated and re-sent at a current price.
+                remaining = int(trade["contracts"]) - filled
+                journal.record_close_order_failed(int(trade["id"]), remaining_contracts=remaining)
+                print(f"REARM trade_id={trade['id']} reason=close_order_{status.value} closed={filled} remaining={remaining}")
             else:
                 print(f"SKIP trade_id={trade['id']} reason=close_order_not_filled_yet status={status}")
             continue
 
         if clients is not None and trade["execution_status"] == "submitted":
-            status = _order_status(clients, trade["client_order_id"])
+            status, filled = _order_state(clients, trade["client_order_id"])
             if status != OrderStatus.FILLED:
-                if status in _TERMINAL_UNFILLED_STATUSES:
+                if status in _TERMINAL_UNFILLED_STATUSES and filled <= 0:
                     journal.record_trade_unfilled(int(trade["id"]), status.value)
                     print(f"CLOSE trade_id={trade['id']} reason=opening_order_{status.value}")
-                else:
+                    continue
+                if filled <= 0:
                     print(f"SKIP trade_id={trade['id']} reason=opening_order_not_filled_yet status={status}")
-                continue
+                    continue
+                # Partially filled: a real, smaller position exists and has to
+                # be managed at the size that actually filled, not the size
+                # that was requested.
+                requested = int(trade["contracts"])
+                if filled != requested:
+                    journal.record_partial_fill(int(trade["id"]), filled)
+                    trade["contracts"] = filled
+                    print(f"PARTIAL trade_id={trade['id']} filled={filled} of {requested} status={status}")
 
         expiration = date.fromisoformat(str(trade["expiration"]))
         dte = (expiration - date.today()).days
