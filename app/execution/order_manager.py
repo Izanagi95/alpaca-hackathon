@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import uuid4
 
+from alpaca.common.exceptions import APIError
 from alpaca.trading.enums import OrderClass, TimeInForce, PositionIntent
 from alpaca.trading.requests import LimitOrderRequest, OptionLegRequest
 
@@ -61,7 +62,14 @@ class OrderManager:
                 ),
             ],
         )
-        order = self._clients.trading.submit_order(order_data=order_request)
+        try:
+            order = self._clients.trading.submit_order(order_data=order_request)
+        except APIError as error:
+            # A broker-level rejection (e.g. one leg's strike collides with an
+            # already-open position from a prior trade, so Alpaca infers the
+            # opposite intent from the one requested) must not kill the whole
+            # scan — every other candidate this cycle still deserves a chance.
+            return ExecutionResult(False, False, client_order_id, reason=f"broker rejected order: {error}")
         return ExecutionResult(True, False, client_order_id, order=order)
 
     def close_bull_put_spread(
@@ -99,5 +107,8 @@ class OrderManager:
                 ),
             ],
         )
-        order = self._clients.trading.submit_order(order_data=order_request)
+        try:
+            order = self._clients.trading.submit_order(order_data=order_request)
+        except APIError as error:
+            return ExecutionResult(False, False, client_order_id, reason=f"broker rejected order: {error}")
         return ExecutionResult(True, False, client_order_id, order=order)

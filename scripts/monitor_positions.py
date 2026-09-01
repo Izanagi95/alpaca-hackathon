@@ -122,6 +122,9 @@ def main() -> int:
             market_regime="bullish", trend="bullish", realized_volatility=0, implied_volatility=0,
         )
         execution = order_manager.close_bull_put_spread(candidate, position, exit_decision)
+        if not execution.submitted and not execution.dry_run:
+            print(f"SKIP trade_id={trade['id']} reason=close_order_rejected detail={execution.reason}")
+            continue
         journal.record_trade_close(int(trade["id"]), exit_decision, execution)
         print(f"EXIT trade_id={trade['id']} reason={exit_decision.reason} pnl={exit_decision.current_pnl} submitted={execution.submitted}")
 
