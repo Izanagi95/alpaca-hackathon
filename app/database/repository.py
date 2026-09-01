@@ -66,6 +66,9 @@ trades_table = Table(
     Column("execution_status", Text, nullable=False),
     Column("exit_reason", Text),
     Column("realized_pnl", Float),
+    # The closing order's id, kept so a submitted-but-unfilled exit can be
+    # followed up on: a trade is only really closed once this order fills.
+    Column("close_client_order_id", Text),
 )
 
 
@@ -111,6 +114,12 @@ def _build_engine(url: str):
             with engine.begin() as conn:
                 conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
     metadata.create_all(engine)
+    if engine.dialect.name.startswith("postgres"):
+        # create_all only creates missing tables, never adds a column to a
+        # table that already exists — so a journal written before
+        # close_client_order_id existed needs it added explicitly.
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE trades ADD COLUMN IF NOT EXISTS close_client_order_id TEXT"))
     return engine
 
 
@@ -197,16 +206,46 @@ class DecisionRepository:
         exit_decision: ExitDecision,
         execution: ExecutionResult,
     ) -> None:
+        """A live close order is only *submitted* here, not filled — leaving
+        closed_at unset keeps the trade in list_open_trades() so the monitor
+        follows it until the exit actually fills. Marking it closed on submit
+        instead stranded real positions at the broker with nothing watching
+        them. A dry run has no order to wait for, so it closes immediately."""
+        if execution.dry_run:
+            values = {
+                "closed_at": datetime.now(timezone.utc).isoformat(),
+                "exit_reason": exit_decision.reason.value,
+                "realized_pnl": exit_decision.current_pnl,
+                "execution_status": "closed_dry_run",
+            }
+        else:
+            values = {
+                "exit_reason": exit_decision.reason.value,
+                "realized_pnl": exit_decision.current_pnl,
+                "execution_status": "closing",
+                "close_client_order_id": execution.client_order_id,
+            }
+        with self._engine.begin() as conn:
+            conn.execute(update(trades_table).where(trades_table.c.id == trade_id).values(**values))
+
+    def record_trade_close_filled(self, trade_id: int) -> None:
+        """Finalises a trade whose closing order has actually filled."""
         with self._engine.begin() as conn:
             conn.execute(
                 update(trades_table)
                 .where(trades_table.c.id == trade_id)
-                .values(
-                    closed_at=datetime.now(timezone.utc).isoformat(),
-                    exit_reason=exit_decision.reason.value,
-                    realized_pnl=exit_decision.current_pnl,
-                    execution_status="closed_dry_run" if execution.dry_run else "closed",
-                )
+                .values(closed_at=datetime.now(timezone.utc).isoformat(), execution_status="closed")
+            )
+
+    def record_close_order_failed(self, trade_id: int) -> None:
+        """Puts a trade back under management after its closing order died
+        (canceled/expired/rejected) without filling — the position is still
+        open at the broker, so the exit has to be re-evaluated and re-sent."""
+        with self._engine.begin() as conn:
+            conn.execute(
+                update(trades_table)
+                .where(trades_table.c.id == trade_id)
+                .values(execution_status="submitted", close_client_order_id=None, exit_reason=None, realized_pnl=None)
             )
 
     def record_trade_unfilled(self, trade_id: int, order_status: str) -> None:
@@ -231,6 +270,7 @@ class DecisionRepository:
             trades_table.c.short_strike, trades_table.c.long_strike, trades_table.c.contracts,
             trades_table.c.entry_credit, trades_table.c.max_profit, trades_table.c.max_loss,
             trades_table.c.client_order_id, trades_table.c.execution_status,
+            trades_table.c.close_client_order_id,
         ]
         with self._engine.connect() as conn:
             rows = conn.execute(select(*columns).where(trades_table.c.closed_at.is_(None))).all()

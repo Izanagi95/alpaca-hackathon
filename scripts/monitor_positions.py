@@ -32,14 +32,13 @@ from app.strategy.bull_put_spread import BullPutSpreadCandidate
 _TERMINAL_UNFILLED_STATUSES = {OrderStatus.CANCELED, OrderStatus.EXPIRED, OrderStatus.REJECTED}
 
 
-def _opening_order_status(clients: AlpacaClients, trade: dict[str, object]) -> OrderStatus | None:
-    """The opening multi-leg order's status, or None if it can't be looked
-    up. A submitted order does not mean a position exists yet — trying to
-    close a not-yet-filled spread makes Alpaca infer the wrong position
-    intent (see incident: 'position intent mismatch, inferred: buy_to_open,
-    specified: buy_to_close')."""
+def _order_status(clients: AlpacaClients, client_order_id: object) -> OrderStatus | None:
+    """An order's status, or None if it can't be looked up. A submitted order
+    does not mean the position changed yet — acting as if it did makes Alpaca
+    infer the wrong position intent (see incident: 'position intent mismatch,
+    inferred: buy_to_open, specified: buy_to_close')."""
     try:
-        return clients.trading.get_order_by_client_id(str(trade["client_order_id"])).status
+        return clients.trading.get_order_by_client_id(str(client_order_id)).status
     except APIError:
         return None
 
@@ -76,8 +75,22 @@ def main() -> int:
     print(f"MONITOR START open_trades={len(open_trades)}")
 
     for trade in open_trades:
+        if clients is not None and trade["execution_status"] == "closing":
+            status = _order_status(clients, trade["close_client_order_id"])
+            if status == OrderStatus.FILLED:
+                journal.record_trade_close_filled(int(trade["id"]))
+                print(f"CLOSED trade_id={trade['id']} symbol={trade['symbol']} close_order=filled")
+            elif status in _TERMINAL_UNFILLED_STATUSES:
+                # The position is still open at the broker; re-arm it so the
+                # exit is re-evaluated and re-sent at a current price.
+                journal.record_close_order_failed(int(trade["id"]))
+                print(f"REARM trade_id={trade['id']} reason=close_order_{status.value}")
+            else:
+                print(f"SKIP trade_id={trade['id']} reason=close_order_not_filled_yet status={status}")
+            continue
+
         if clients is not None and trade["execution_status"] == "submitted":
-            status = _opening_order_status(clients, trade)
+            status = _order_status(clients, trade["client_order_id"])
             if status != OrderStatus.FILLED:
                 if status in _TERMINAL_UNFILLED_STATUSES:
                     journal.record_trade_unfilled(int(trade["id"]), status.value)
