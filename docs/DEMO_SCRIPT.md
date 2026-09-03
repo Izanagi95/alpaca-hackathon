@@ -119,8 +119,11 @@ Switch to the Alpaca tab, then the terminal.
 
 > "Running it for real found bugs that tests did not."
 >
-> "And two things I did not fake. No earnings filter — the data is not
-> reliable. The backtest is theoretical, and says so."
+> "And two things I did not fake."
+>
+> "There is no earnings filter. The data is not reliable enough."
+>
+> "The backtest is theoretical. It says so everywhere."
 
 ## 3:20 - 3:30 · Slide 10 "Status" or Slide 11 "Close"
 
