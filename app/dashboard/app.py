@@ -375,6 +375,11 @@ tbody tr:hover{background:var(--bg)}
 .bar-fill{height:100%;border-radius:4px}
 .bar-positive{background:var(--accent)} .bar-negative{background:var(--danger)}
 .rationale-cell{white-space:normal;max-width:340px;color:var(--text-muted);font-size:12.5px}
+.rationale-row td{white-space:normal;border-top:0;padding:0 16px 12px;color:var(--text-muted);
+  font-size:12.5px;line-height:1.5}
+.rationale-label{display:inline-block;background:var(--border-soft);color:var(--text-muted);
+  border-radius:4px;padding:1px 6px;margin-right:8px;font-size:10.5px;font-weight:700;
+  letter-spacing:.06em;vertical-align:1px}
 .empty-state{padding:32px 16px;text-align:center;color:var(--text-muted)}
 """
 
@@ -465,12 +470,18 @@ def overview_page() -> str:
     approved = counts["approved"]
     approval_pct = round(approved / scanned * 100, 2) if scanned else 0.0
 
+    # A "Portfolio: unavailable" tile reads as a broken panel. The note above
+    # already says the figures aren't there and why, so the section is simply
+    # left out instead — absent on purpose rather than present and empty.
+    portfolio_section = (
+        f"<h2>Portfolio</h2>\n<div class=\"stats\">{_portfolio_stats_html()}\n</div>\n"
+        if account_snapshot() is not None
+        else ""
+    )
+
     body = f"""
 {_source_identity_html()}
-<h2>Portfolio</h2>
-<div class="stats">{_portfolio_stats_html()}
-</div>
-
+{portfolio_section}
 <h2>Agent activity</h2>
 <div class="stats">
   <div class="stat"><div class="label">Scanned candidates</div><b>{scanned:,}</b></div>
@@ -624,8 +635,7 @@ def decisions_page(
         ai_score_display = '<span class="muted">not consulted</span>' if ai_not_consulted else f"<b>{proposal.get('score', 0)}</b>"
         rows.append(
             "<tr><td>{timestamp}</td><td><b>{symbol}</b></td><td>{spread}</td><td>{expiry}</td>"
-            "<td>{ai}</td><td>{final}</td><td>{gates}</td>"
-            "<td class=\"rationale-cell\">{why}</td></tr>".format(
+            "<td>{ai}</td><td>{final}</td><td>{gates}</td></tr>".format(
                 timestamp=_format_ts(decision["timestamp"]),
                 symbol=decision["symbol"],
                 spread=_spread_text(decision["options_data"]),
@@ -633,10 +643,20 @@ def decisions_page(
                 ai=ai_score_display,
                 final=_decision_badge(str(decision["final_decision"])),
                 gates=_failed_gates_html(decision["risk_checks"], ai_not_consulted),
-                why=_escape(", ".join(proposal.get("rationale", []))),
             )
         )
-    decisions_table = "".join(rows) or '<tr><td colspan="8" class="empty-state">No decisions match these filters</td></tr>'
+        # The AI's reasoning gets a full-width row of its own, and only where
+        # the AI actually reasoned. As a column it was the same generic
+        # sentence on every pre-screened row — already said by the failed
+        # gates — while pushing the table wide enough to need side-scrolling,
+        # which buried the handful of rows that carry real analysis.
+        rationale = ", ".join(proposal.get("rationale", []))
+        if rationale and not ai_not_consulted:
+            rows.append(
+                f'<tr class="rationale-row"><td colspan="7">'
+                f'<span class="rationale-label">AI</span>{_escape(rationale)}</td></tr>'
+            )
+    decisions_table = "".join(rows) or '<tr><td colspan="7" class="empty-state">No decisions match these filters</td></tr>'
 
     symbol_options = "".join(_option(s, s, symbol) for s in known_symbols())
     decision_options = "".join(_option(v, v, final_decision) for v in ("APPROVE", "REJECT"))
@@ -666,6 +686,6 @@ minute — they differ by strike, not by repetition. Showing the
 filters above to see further back.</p>
 
 <div class="card"><table><thead><tr><th>Timestamp</th><th>Symbol</th><th>Spread</th><th>Expiry</th>
-<th>AI score</th><th>Decision</th><th>Failed gates</th><th>Rationale</th></tr></thead>
+<th>AI score</th><th>Decision</th><th>Failed gates</th></tr></thead>
 <tbody>{decisions_table}</tbody></table></div>"""
     return _page("Decision Journal", "/decisions", body)
