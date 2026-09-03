@@ -94,6 +94,33 @@ def recent_trades(
         repository.close()
 
 
+DECISION_PAGE_LIMIT = 200
+
+
+def decision_counts(
+    start: str | None = None, end: str | None = None,
+    symbol: str | None = None, final_decision: str | None = None,
+) -> dict[str, int]:
+    """Aggregated in the database rather than counted from the rows on screen,
+    which are capped — counting those reports the cap, not the journal."""
+    repository = DecisionRepository(_database_target())
+    try:
+        return repository.count_decisions(start=start, end=end, symbol=symbol, final_decision=final_decision)
+    finally:
+        repository.close()
+
+
+def trade_count(
+    start: str | None = None, end: str | None = None,
+    symbol: str | None = None, status: str | None = None,
+) -> int:
+    repository = DecisionRepository(_database_target())
+    try:
+        return repository.count_trades(start=start, end=end, symbol=symbol, status=status)
+    finally:
+        repository.close()
+
+
 def known_symbols() -> list[str]:
     repository = DecisionRepository(_database_target())
     try:
@@ -193,6 +220,48 @@ def _format_ts(raw: str) -> str:
         return str(raw)
 
 
+def _spread_text(options_data: object) -> str:
+    """The strikes, which are what actually distinguish one candidate from
+    another. A single scan evaluates every viable strike pair on every
+    expiration, so without this column dozens of genuinely different rows look
+    like the same row repeated."""
+    try:
+        data = json.loads(str(options_data))
+        return f"{float(data['short_strike']):g}/{float(data['long_strike']):g}"
+    except (ValueError, KeyError, TypeError):
+        return '<span class="muted">-</span>'
+
+
+def _expiry_text(options_data: object) -> str:
+    try:
+        return _escape(str(json.loads(str(options_data))["expiration"]))
+    except (ValueError, KeyError, TypeError):
+        return '<span class="muted">-</span>'
+
+
+def _failed_gates_html(risk_checks: object, ai_not_consulted: bool) -> str:
+    """Names the risk gates a candidate actually failed.
+
+    The journal records every gate individually, which is far more useful than
+    the single generic sentence the AI layer writes when it is skipped — the
+    difference between "rejected" and "rejected because the credit was too thin
+    and we already hold this underlying".
+
+    `ai_score` is dropped when the AI was never consulted: the score defaults to
+    zero, so the gate fails mechanically and would otherwise be reported as a
+    finding of its own alongside the real reasons.
+    """
+    try:
+        reasons = list(json.loads(str(risk_checks)).get("reasons", []))
+    except (ValueError, TypeError):
+        return '<span class="muted">-</span>'
+    if ai_not_consulted:
+        reasons = [r for r in reasons if r != "ai_score"]
+    if not reasons:
+        return '<span class="muted">none</span>'
+    return " ".join(f'<span class="gate-tag">{_escape(r)}</span>' for r in reasons)
+
+
 def _decision_badge(final_decision: str) -> str:
     css_class = "badge-approve" if final_decision == "APPROVE" else "badge-reject"
     return f'<span class="badge {css_class}">{final_decision}</span>'
@@ -265,6 +334,9 @@ h2:not(:first-child){margin-top:40px}
 .stat b{display:block;font-size:24px;margin-top:6px;font-weight:700;letter-spacing:-.01em}
 .pnl-positive{color:var(--accent)} .pnl-negative{color:var(--danger)}
 .muted{color:var(--text-muted)}
+.gate-tag{display:inline-block;background:var(--danger-soft,rgba(220,38,38,.09));color:var(--danger);
+  border-radius:5px;padding:1px 6px;font-size:11.5px;font-weight:600;margin:1px 2px 1px 0;
+  white-space:nowrap}
 .source-note{background:var(--neutral-soft);border:1px solid var(--border-soft);border-radius:var(--radius);
   padding:12px 16px;margin:0 0 18px;font-size:13px;line-height:1.55;color:var(--text-muted)}
 .source-note b{color:var(--text)}
@@ -388,9 +460,10 @@ def _portfolio_stats_html() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def overview_page() -> str:
-    decision_rows = recent_decisions()
-    approved = sum(1 for d in decision_rows if d["final_decision"] == "APPROVE")
-    rejected = len(decision_rows) - approved
+    counts = decision_counts()
+    scanned = counts["total"]
+    approved = counts["approved"]
+    approval_pct = round(approved / scanned * 100, 2) if scanned else 0.0
 
     body = f"""
 {_source_identity_html()}
@@ -400,9 +473,10 @@ def overview_page() -> str:
 
 <h2>Agent activity</h2>
 <div class="stats">
-  <div class="stat"><div class="label">Scanned candidates</div><b>{len(decision_rows)}</b></div>
-  <div class="stat"><div class="label">Approved</div><b class="pnl-positive">{approved}</b></div>
-  <div class="stat"><div class="label">Rejected</div><b class="muted">{rejected}</b></div>
+  <div class="stat"><div class="label">Scanned candidates</div><b>{scanned:,}</b></div>
+  <div class="stat"><div class="label">Approved</div><b class="pnl-positive">{approved:,}</b></div>
+  <div class="stat"><div class="label">Rejected</div><b class="muted">{scanned - approved:,}</b></div>
+  <div class="stat"><div class="label">Approval rate</div><b>{approval_pct}%</b></div>
 </div>"""
     return _page("Overview", "/", body)
 
@@ -468,6 +542,9 @@ def trades_page(
     symbol: str | None = None, status: str | None = None,
 ) -> str:
     filtered = recent_trades(start, end, symbol or None, status or None)
+    # Aggregated for the same reason as the decision counts: the row listing is
+    # capped, so its length stops being the total once the journal outgrows it.
+    matching = trade_count(start, end, symbol or None, status or None)
     open_count = sum(1 for t in filtered if not t["closed_at"])
     closed = [t for t in filtered if t["closed_at"]]
     wins = sum(1 for t in closed if (t["realized_pnl"] or 0) > 0)
@@ -514,7 +591,7 @@ def trades_page(
 </form>
 
 <div class="stats">
-  <div class="stat"><div class="label">Matching trades</div><b>{len(filtered)}</b></div>
+  <div class="stat"><div class="label">Matching trades</div><b>{matching:,}</b></div>
   <div class="stat"><div class="label">Open</div><b>{open_count}</b></div>
   <div class="stat"><div class="label">Wins / Losses</div><b><span class="pnl-positive">{wins}</span> / <span class="pnl-negative">{losses}</span></b></div>
   <div class="stat"><div class="label">Realized P&amp;L</div><b>{_pnl_text(total_pnl if closed else None)}</b></div>
@@ -533,8 +610,11 @@ def decisions_page(
     symbol: str | None = None, final_decision: str | None = None,
 ) -> str:
     filtered = recent_decisions(start, end, symbol or None, final_decision or None)
-    approved = sum(1 for d in filtered if d["final_decision"] == "APPROVE")
-    rejected = len(filtered) - approved
+    # Counted in the database: `filtered` is one capped page of rows, so its
+    # length is the cap once the journal grows past it.
+    counts = decision_counts(start, end, symbol or None, final_decision or None)
+    matching = counts["total"]
+    approved = counts["approved"]
 
     rows = []
     for decision in filtered:
@@ -543,17 +623,20 @@ def decisions_page(
         ai_not_consulted = "ai_skipped_deterministic_reject" in risk_flags
         ai_score_display = '<span class="muted">not consulted</span>' if ai_not_consulted else f"<b>{proposal.get('score', 0)}</b>"
         rows.append(
-            "<tr><td>{timestamp}</td><td><b>{symbol}</b></td><td>{ai}</td><td>{final}</td>"
-            "<td class=\"muted\">{reason}</td><td class=\"rationale-cell\">{why}</td></tr>".format(
+            "<tr><td>{timestamp}</td><td><b>{symbol}</b></td><td>{spread}</td><td>{expiry}</td>"
+            "<td>{ai}</td><td>{final}</td><td>{gates}</td>"
+            "<td class=\"rationale-cell\">{why}</td></tr>".format(
                 timestamp=_format_ts(decision["timestamp"]),
                 symbol=decision["symbol"],
+                spread=_spread_text(decision["options_data"]),
+                expiry=_expiry_text(decision["options_data"]),
                 ai=ai_score_display,
                 final=_decision_badge(str(decision["final_decision"])),
-                reason=_escape(", ".join(risk_flags) or "none"),
+                gates=_failed_gates_html(decision["risk_checks"], ai_not_consulted),
                 why=_escape(", ".join(proposal.get("rationale", []))),
             )
         )
-    decisions_table = "".join(rows) or '<tr><td colspan="6" class="empty-state">No decisions match these filters</td></tr>'
+    decisions_table = "".join(rows) or '<tr><td colspan="8" class="empty-state">No decisions match these filters</td></tr>'
 
     symbol_options = "".join(_option(s, s, symbol) for s in known_symbols())
     decision_options = "".join(_option(v, v, final_decision) for v in ("APPROVE", "REJECT"))
@@ -570,12 +653,19 @@ def decisions_page(
 </form>
 
 <div class="stats">
-  <div class="stat"><div class="label">Matching candidates</div><b>{len(filtered)}</b></div>
-  <div class="stat"><div class="label">Approved</div><b class="pnl-positive">{approved}</b></div>
-  <div class="stat"><div class="label">Rejected</div><b class="muted">{rejected}</b></div>
-  <div class="stat"><div class="label">Approval rate</div><b>{round(approved / len(filtered) * 100, 1) if filtered else 0}%</b></div>
+  <div class="stat"><div class="label">Matching candidates</div><b>{matching:,}</b></div>
+  <div class="stat"><div class="label">Approved</div><b class="pnl-positive">{approved:,}</b></div>
+  <div class="stat"><div class="label">Rejected</div><b class="muted">{matching - approved:,}</b></div>
+  <div class="stat"><div class="label">Approval rate</div><b>{round(approved / matching * 100, 2) if matching else 0}%</b></div>
 </div>
 
-<div class="card"><table><thead><tr><th>Timestamp</th><th>Symbol</th><th>AI score</th><th>Decision</th>
-<th>Risk flags</th><th>Rationale</th></tr></thead><tbody>{decisions_table}</tbody></table></div>"""
+<p class="source-note">A single scan prices every viable strike pair on every
+expiration in range, so one symbol can produce dozens of rows within the same
+minute — they differ by strike, not by repetition. Showing the
+<b>{len(filtered):,}</b> most recent of <b>{matching:,}</b> matching; narrow the
+filters above to see further back.</p>
+
+<div class="card"><table><thead><tr><th>Timestamp</th><th>Symbol</th><th>Spread</th><th>Expiry</th>
+<th>AI score</th><th>Decision</th><th>Failed gates</th><th>Rationale</th></tr></thead>
+<tbody>{decisions_table}</tbody></table></div>"""
     return _page("Decision Journal", "/decisions", body)

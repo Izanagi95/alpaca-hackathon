@@ -317,8 +317,26 @@ class DecisionRepository:
         columns = [
             decisions_table.c.timestamp, decisions_table.c.symbol,
             decisions_table.c.ai_decision, decisions_table.c.final_decision,
+            # The strikes and the individual gate results are what tell one
+            # candidate apart from another: a single scan evaluates every
+            # viable strike pair on every expiration, so without these the rows
+            # are indistinguishable.
+            decisions_table.c.options_data, decisions_table.c.risk_checks,
         ]
-        query = select(*columns).order_by(decisions_table.c.id.desc()).limit(limit)
+        query = self._filtered_decisions(
+            select(*columns).order_by(decisions_table.c.id.desc()).limit(limit),
+            start, end, symbol, final_decision,
+        )
+        with self._engine.connect() as conn:
+            rows = conn.execute(query).all()
+        return [dict(row._mapping) for row in rows]
+
+    def _filtered_decisions(
+        self, query, start: str | None, end: str | None,
+        symbol: str | None, final_decision: str | None,
+    ):
+        """Applies the journal's filters to any decisions query, so a row
+        listing and a count of those rows can never drift apart."""
         if start:
             query = query.where(decisions_table.c.timestamp >= start)
         if end:
@@ -327,9 +345,46 @@ class DecisionRepository:
             query = query.where(decisions_table.c.symbol == symbol)
         if final_decision:
             query = query.where(decisions_table.c.final_decision == final_decision)
+        return query
+
+    def count_decisions(
+        self, start: str | None = None, end: str | None = None,
+        symbol: str | None = None, final_decision: str | None = None,
+    ) -> dict[str, int]:
+        """Total and approved candidate counts for a filter.
+
+        Summary figures have to be aggregated in the database, not derived from
+        a page of rows: `list_recent` caps its result, so counting what it
+        returns reports the cap. With 40,000+ scanned candidates and 32
+        approvals, that misreads as "200 scanned, 0 approved".
+        """
+        total_query = self._filtered_decisions(
+            select(func.count()).select_from(decisions_table), start, end, symbol, final_decision
+        )
+        approved_query = self._filtered_decisions(
+            select(func.count()).select_from(decisions_table), start, end, symbol, final_decision
+        ).where(decisions_table.c.final_decision == "APPROVE")
         with self._engine.connect() as conn:
-            rows = conn.execute(query).all()
-        return [dict(row._mapping) for row in rows]
+            return {
+                "total": int(conn.execute(total_query).scalar_one()),
+                "approved": int(conn.execute(approved_query).scalar_one()),
+            }
+
+    def count_trades(
+        self, start: str | None = None, end: str | None = None,
+        symbol: str | None = None, status: str | None = None,
+    ) -> int:
+        query = select(func.count()).select_from(trades_table)
+        if start:
+            query = query.where(trades_table.c.opened_at >= start)
+        if end:
+            query = query.where(trades_table.c.opened_at < f"{end}T23:59:59.999999")
+        if symbol:
+            query = query.where(trades_table.c.symbol == symbol)
+        if status:
+            query = query.where(trades_table.c.execution_status == status)
+        with self._engine.connect() as conn:
+            return int(conn.execute(query).scalar_one())
 
     def distinct_symbols(self) -> list[str]:
         with self._engine.connect() as conn:

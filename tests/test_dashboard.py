@@ -126,6 +126,89 @@ def test_overview_reports_the_postgres_schema_from_database_url(tmp_path, monkey
     assert dashboard_module._journal_schema() == "schema myschema"
 
 
+def _seed_decision(repo, *, timestamp: str, symbol: str, final_decision: str) -> None:
+    from app.database.repository import decisions_table
+
+    with repo._engine.begin() as conn:
+        conn.execute(decisions_table.insert().values(
+            timestamp=timestamp, symbol=symbol, market_data="{}",
+            options_data='{"short_strike": 100, "long_strike": 95, "expiration": "2026-09-18"}',
+            ai_decision='{"score": 80, "rationale": [], "risk_flags": []}',
+            ai_rationale="[]", risk_checks='{"reasons": []}', final_decision=final_decision,
+        ))
+
+
+def test_summary_counts_come_from_the_database_not_the_visible_rows(tmp_path, monkeypatch) -> None:
+    """The row listing is capped, so counting it reports the cap. With 40k+
+    scanned candidates that misread as "200 scanned, 0 approved" - the summary
+    has to be aggregated in the database instead."""
+    from app.database.repository import DecisionRepository
+
+    db_path = tmp_path / "counts.db"
+    monkeypatch.setattr(dashboard_module, "DATABASE_PATH", db_path)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DASHBOARD_FETCH_ACCOUNT", "false")
+
+    repo = DecisionRepository(db_path)
+    for i in range(4):
+        _seed_decision(repo, timestamp=f"2026-08-2{i}T10:00:00+00:00", symbol="QQQ", final_decision="REJECT")
+    _seed_decision(repo, timestamp="2026-08-25T10:00:00+00:00", symbol="QQQ", final_decision="APPROVE")
+
+    # No rows reach the table, yet the tiles must still report the journal.
+    monkeypatch.setattr(dashboard_module, "recent_decisions", lambda *a, **k: [])
+    response = TestClient(dashboard_module.app).get("/")
+
+    assert "Scanned candidates" in response.text
+    assert ">5<" in response.text  # total, not the length of the row list
+    assert ">1<" in response.text  # approved
+
+
+def test_count_decisions_honours_filters(tmp_path) -> None:
+    from app.database.repository import DecisionRepository
+
+    repo = DecisionRepository(tmp_path / "countfilter.db")
+    _seed_decision(repo, timestamp="2026-01-01T10:00:00+00:00", symbol="OLD", final_decision="APPROVE")
+    _seed_decision(repo, timestamp="2026-08-20T10:00:00+00:00", symbol="NEW", final_decision="APPROVE")
+    _seed_decision(repo, timestamp="2026-08-21T10:00:00+00:00", symbol="NEW", final_decision="REJECT")
+
+    assert repo.count_decisions() == {"total": 3, "approved": 2}
+    assert repo.count_decisions(start="2026-08-01", end="2026-08-31") == {"total": 2, "approved": 1}
+    assert repo.count_decisions(symbol="NEW") == {"total": 2, "approved": 1}
+    assert repo.count_decisions(final_decision="REJECT") == {"total": 1, "approved": 0}
+
+
+def test_decisions_table_distinguishes_rows_by_strike_and_failed_gates(tmp_path, monkeypatch) -> None:
+    """Every candidate in a scan shares symbol, timestamp and generic rationale;
+    the strikes and the gates it failed are what tell them apart."""
+    from app.database.repository import DecisionRepository, decisions_table
+
+    db_path = tmp_path / "gates.db"
+    monkeypatch.setattr(dashboard_module, "DATABASE_PATH", db_path)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DASHBOARD_FETCH_ACCOUNT", "false")
+
+    repo = DecisionRepository(db_path)
+    with repo._engine.begin() as conn:
+        conn.execute(decisions_table.insert().values(
+            timestamp="2026-08-20T10:00:00+00:00", symbol="QQQ", market_data="{}",
+            options_data='{"short_strike": 705, "long_strike": 700, "expiration": "2026-09-14"}',
+            ai_decision='{"score": 0, "rationale": [], "risk_flags": ["ai_skipped_deterministic_reject"]}',
+            ai_rationale="[]",
+            risk_checks='{"reasons": ["credit", "duplicate_exposure", "ai_score"]}',
+            final_decision="REJECT",
+        ))
+
+    response = TestClient(dashboard_module.app).get("/decisions")
+
+    assert "705/700" in response.text
+    assert "2026-09-14" in response.text
+    assert "duplicate_exposure" in response.text
+    assert "credit" in response.text
+    # The AI was never consulted, so its score gate failing is an artefact of
+    # the default zero rather than a finding worth reporting beside real ones.
+    assert "ai_score" not in response.text
+
+
 def test_account_snapshot_disabled_via_env(monkeypatch) -> None:
     monkeypatch.setenv("DASHBOARD_FETCH_ACCOUNT", "false")
 
