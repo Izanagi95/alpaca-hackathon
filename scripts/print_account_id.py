@@ -17,7 +17,11 @@ def main() -> int:
     settings.require_credentials()
 
     account = AlpacaClients(settings).verify_account()
+    # Two different identifiers, and submission forms ask for either: `id` is
+    # the UUID the API uses, `account_number` is the PA... string the Alpaca
+    # dashboard shows. Print both so there's nothing to look up elsewhere.
     print(f"account_id={account.id}")
+    print(f"account_number={account.account_number}")
     print(f"status={account.status}")
     print(f"equity={account.equity}")
     print(f"buying_power={account.buying_power}")
