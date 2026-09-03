@@ -82,12 +82,14 @@ when the decision happens — but an order that is submitted is not yet a
 position. Early in the run this mattered: an order that never filled still
 appeared as an open position, and the monitor would "close" it against a
 favourable quote and journal a realized P&L for something the broker never
-held. Running three accounts with different parameter sets made the size of
-the problem measurable — the journal's P&L was accurate to within 5% on one
-account (journal +$1,089 vs account +$1,035) but overstated by 47% on
-another (journal +$1,056 vs account +$561), and the gap tracked exactly how
-often that account's orders failed to fill, which in turn tracked how liquid
-its watchlist was.
+held. Running three accounts with different parameter sets made the size of the
+problem measurable, by reconciling each journal against its own broker
+account leg by leg: on one account the journal came to +$892 (realized plus
+the live value of positions the broker really held) against +$901 of actual
+equity gain, within 1%; on another it came to +$854 against +$584, overstated
+by 46%. The gap tracked exactly how often that account's orders failed to
+fill — three of its five journalled open positions had no counterpart at the
+broker at all.
 
 The execution path now confirms fill state before acting on a position: the
 monitor fetches the real order status, marks an order that ended
