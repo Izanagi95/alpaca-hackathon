@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -59,6 +60,10 @@ def account_snapshot() -> dict[str, float] | None:
             "buying_power": float(account.buying_power) if account.buying_power else 0.0,
             "daily_pnl": round(equity - last_equity, 2),
             "daily_pnl_pct": round((equity - last_equity) / last_equity * 100, 2) if last_equity else 0.0,
+            # Which account this is, so the page can be checked against the
+            # journal it is showing beside it. Credentials and DATABASE_URL are
+            # configured separately and can name different accounts.
+            "account_number": account.account_number or "",
         }
         _account_cache["data"] = snapshot
         _account_cache["fetched_at"] = time.monotonic()
@@ -330,6 +335,39 @@ def _page(title: str, active_path: str, body: str) -> str:
 </main></body></html>"""
 
 
+def _journal_schema() -> str:
+    """The Postgres schema DATABASE_URL selects, or the SQLite file in use.
+    Displayed so the journal's identity is never left implicit."""
+    url = os.getenv("DATABASE_URL") or ""
+    match = re.search(r"search_path(?:=|%3D)([A-Za-z0-9_]+)", url)
+    if match:
+        return f"schema {match.group(1)}"
+    if url:
+        return "postgres (default schema)"
+    return str(DATABASE_PATH)
+
+
+def _source_identity_html() -> str:
+    """Names the account the Portfolio figures come from and the journal the
+    tables come from. These are configured independently — credentials in one
+    place, DATABASE_URL in another — so pairing one account's portfolio with
+    another account's trades is an easy and completely silent mistake. Stating
+    both makes it visible at a glance."""
+    account_data = account_snapshot()
+    account_label = (
+        str(account_data.get("account_number") or "").strip() or "unknown account"
+        if account_data is not None
+        else "no credentials"
+    )
+    return (
+        f'<p class="source-note">Portfolio figures come from Alpaca account '
+        f"<b>{_escape(account_label)}</b>; the tables below come from journal "
+        f"<b>{_escape(_journal_schema())}</b>. These are configured separately — "
+        "if they name different accounts, the two halves of this page describe "
+        "different things.</p>"
+    )
+
+
 def _portfolio_stats_html() -> str:
     account_data = account_snapshot()
     if account_data is not None:
@@ -350,6 +388,7 @@ def overview_page() -> str:
     rejected = len(decision_rows) - approved
 
     body = f"""
+{_source_identity_html()}
 <h2>Portfolio</h2>
 <div class="stats">{_portfolio_stats_html()}
 </div>

@@ -101,6 +101,31 @@ def test_trades_page_symbol_filter_form_preselects_value(tmp_path, monkeypatch) 
     assert 'value="AAPL" selected' in response.text
 
 
+def test_overview_names_the_journal_it_is_reading(tmp_path, monkeypatch) -> None:
+    """Portfolio figures and journal tables are configured independently, so the
+    page has to say which account and which journal it is showing."""
+    monkeypatch.setattr(dashboard_module, "DATABASE_PATH", tmp_path / "identity.db")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DASHBOARD_FETCH_ACCOUNT", "false")
+    client = TestClient(dashboard_module.app)
+
+    response = client.get("/")
+
+    assert "identity.db" in response.text
+    assert "no credentials" in response.text  # account fetching is off
+
+
+def test_overview_reports_the_postgres_schema_from_database_url(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(dashboard_module, "DATABASE_PATH", tmp_path / "unused.db")
+    monkeypatch.setenv("DASHBOARD_FETCH_ACCOUNT", "false")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://user:pw@host:5432/postgres?options=-c%20search_path%3Dmyschema",
+    )
+
+    assert dashboard_module._journal_schema() == "schema myschema"
+
+
 def test_account_snapshot_disabled_via_env(monkeypatch) -> None:
     monkeypatch.setenv("DASHBOARD_FETCH_ACCOUNT", "false")
 
