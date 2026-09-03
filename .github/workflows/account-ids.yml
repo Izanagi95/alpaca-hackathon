@@ -16,6 +16,7 @@ jobs:
       ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
       ALPACA_PAPER: "true"
       PAPER_TRADING_ONLY: "true"
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,3 +46,8 @@ jobs:
           for p in positions:
               print(f"position {p.symbol} qty={p.qty} unrealized={p.unrealized_pl}")
           PY
+
+      # The journal and the broker can disagree, so state by how much rather
+      # than leaving a reader to trust one over the other.
+      - name: Reconcile journal against broker
+        run: python scripts/reconcile_journal.py
