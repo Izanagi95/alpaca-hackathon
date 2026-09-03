@@ -127,6 +127,23 @@ def daily_kpis(start: str | None = None, end: str | None = None) -> list[dict[st
     return merged
 
 
+# A trade is journaled when its opening order is *submitted*, since that is
+# when the decision happens — but submission is not a fill. monitor_positions
+# now confirms the real order state before acting (never-filled orders are
+# closed at zero, partial fills are resized, still-working orders are
+# skipped), so new rows track the broker. Rows written before that fix landed
+# do not, and were measured to overstate one account's P&L by 47%. The broker
+# stays the authoritative record of performance; this journal explains
+# *reasoning*, not the books.
+_JOURNAL_SOURCE_NOTE = (
+    '<p class="source-note">These figures come from the <b>agent\'s own decision journal</b>, '
+    "not from the broker's books. A spread is recorded when its opening order is submitted "
+    "rather than when it fills, so rows written before fill confirmation was added can "
+    "overstate P&amp;L. For actual account performance the <b>Alpaca account is authoritative</b> "
+    "— see the Portfolio section on the Overview page.</p>"
+)
+
+
 def _preset_range(days: int) -> tuple[str, str]:
     end = date.today()
     start = end - timedelta(days=days - 1)
@@ -243,6 +260,9 @@ h2:not(:first-child){margin-top:40px}
 .stat b{display:block;font-size:24px;margin-top:6px;font-weight:700;letter-spacing:-.01em}
 .pnl-positive{color:var(--accent)} .pnl-negative{color:var(--danger)}
 .muted{color:var(--text-muted)}
+.source-note{background:var(--neutral-soft);border:1px solid var(--border-soft);border-radius:var(--radius);
+  padding:12px 16px;margin:0 0 18px;font-size:13px;line-height:1.55;color:var(--text-muted)}
+.source-note b{color:var(--text)}
 .day-filters{display:flex;gap:4px;background:var(--neutral-soft);padding:3px;border-radius:999px;
   text-transform:none;letter-spacing:0}
 .day-filters a{color:var(--text-muted);text-decoration:none;font-size:12.5px;font-weight:600;
@@ -391,6 +411,7 @@ def kpis_page(start: str | None = None, end: str | None = None) -> str:
 </div>
 
 <h2>By day</h2>
+{_JOURNAL_SOURCE_NOTE}
 <div class="card"><table><thead><tr><th>Day</th><th>Scanned</th><th>Approved</th><th>Approval %</th>
 <th>Closed</th><th>Wins</th><th>Losses</th><th>P&amp;L</th><th></th></tr></thead>
 <tbody>{kpi_table}</tbody></table></div>"""
@@ -455,6 +476,7 @@ def trades_page(
   <div class="stat"><div class="label">Realized P&amp;L</div><b>{_pnl_text(total_pnl if closed else None)}</b></div>
 </div>
 
+{_JOURNAL_SOURCE_NOTE}
 <div class="card"><table><thead><tr><th>Opened</th><th>Symbol</th><th>Expiration</th><th>Strikes</th>
 <th>Contracts</th><th>Credit</th><th>Status</th><th>Closed</th><th>Exit reason</th><th>P&amp;L</th></tr></thead>
 <tbody>{trades_table}</tbody></table></div>"""

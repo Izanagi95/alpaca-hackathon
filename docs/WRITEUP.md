@@ -75,6 +75,36 @@ default. **Known, documented limitation:** there is no earnings/event-risk
 gate — Alpaca does not expose a reliable earnings calendar, and rather than
 fake this check it is left out and called out explicitly.
 
+## Fill confirmation: found live, fixed live
+
+A trade is journaled when its opening order is **submitted**, because that is
+when the decision happens — but an order that is submitted is not yet a
+position. Early in the run this mattered: an order that never filled still
+appeared as an open position, and the monitor would "close" it against a
+favourable quote and journal a realized P&L for something the broker never
+held. Running three accounts with different parameter sets made the size of
+the problem measurable — the journal's P&L was accurate to within 5% on one
+account (journal +$1,089 vs account +$1,035) but overstated by 47% on
+another (journal +$1,056 vs account +$561), and the gap tracked exactly how
+often that account's orders failed to fill, which in turn tracked how liquid
+its watchlist was.
+
+The execution path now confirms fill state before acting on a position: the
+monitor fetches the real order status, marks an order that ended
+canceled/expired/rejected as never-filled with zero P&L, resizes a partial
+fill to the contracts that actually filled (so exit thresholds and the
+closing order match the real position), and simply skips a position whose
+opening order is still working rather than pricing an exit against it. The
+closing side is symmetric — a trade counts as closed only once the closing
+order itself fills, and a closing order that expires unfilled re-arms the
+remainder instead of being assumed done.
+
+Rows written before those fixes landed are still in the journal, so the
+**Alpaca account remains the authoritative record of performance** while the
+journal's job is to explain *reasoning* — what was considered, scored,
+approved or rejected, and why. The dashboard states this on every page that
+shows P&L rather than presenting a journal total as account performance.
+
 ## Explainability
 
 Every candidate the agent ever evaluates — approved or rejected — is written
