@@ -156,9 +156,10 @@ def test_summary_counts_come_from_the_database_not_the_visible_rows(tmp_path, mo
 
     # No rows reach the table, yet the tiles must still report the journal.
     monkeypatch.setattr(dashboard_module, "recent_decisions", lambda *a, **k: [])
+    dashboard_module._funnel_cache.clear()
     response = TestClient(dashboard_module.app).get("/")
 
-    assert "Scanned candidates" in response.text
+    assert "Candidates priced" in response.text
     assert ">5<" in response.text  # total, not the length of the row list
     assert ">1<" in response.text  # approved
 

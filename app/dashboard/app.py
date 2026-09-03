@@ -121,6 +121,36 @@ def trade_count(
         repository.close()
 
 
+FUNNEL_CACHE_TTL_SECONDS = 120.0
+#: Keyed by database target: one process can serve more than one journal, and a
+#: cache shared across them would answer for the wrong one.
+_funnel_cache: dict[str, tuple[float, dict[str, object]]] = {}
+
+
+def rejection_funnel() -> dict[str, object]:
+    """Scanned -> reached the AI -> approved, plus which gates turned candidates
+    away. Cached briefly: the gate breakdown is a full scan of the journal
+    (~1.7s against Supabase) and the numbers move slowly, so recomputing it on
+    every page load would make the Overview the slowest page in the app."""
+    target = _database_target()
+    cached = _funnel_cache.get(target)
+    if cached is not None and time.monotonic() - cached[0] < FUNNEL_CACHE_TTL_SECONDS:
+        return cached[1]
+    repository = DecisionRepository(target)
+    try:
+        counts = repository.count_decisions()
+        data: dict[str, object] = {
+            "scanned": counts["total"],
+            "approved": counts["approved"],
+            "ai_consulted": repository.count_ai_consulted(),
+            "gates": repository.count_gate_failures(),
+        }
+    finally:
+        repository.close()
+    _funnel_cache[target] = (time.monotonic(), data)
+    return data
+
+
 def known_symbols() -> list[str]:
     repository = DecisionRepository(_database_target())
     try:
@@ -262,6 +292,80 @@ def _failed_gates_html(risk_checks: object, ai_not_consulted: bool) -> str:
     return " ".join(f'<span class="gate-tag">{_escape(r)}</span>' for r in reasons)
 
 
+#: Plain-language labels for the gates, since the panel is read by people who
+#: did not write the risk engine.
+_GATE_LABELS = {
+    "duplicate_exposure": "Already exposed to this underlying",
+    "open_interest": "Open interest too thin",
+    "volume": "Volume too thin",
+    "liquidity_spread": "Bid/ask spread too wide",
+    "credit": "Credit received too small",
+    "portfolio_risk": "Portfolio risk budget spent",
+    "position_limit": "Open-position limit reached",
+    "daily_loss": "Daily loss circuit breaker",
+    "dte": "Outside the days-to-expiry window",
+    "defined_risk": "Risk not defined",
+    "sizing": "Position would size to zero contracts",
+    "paper_mode": "Not in paper mode",
+}
+
+
+def _gate_breakdown_html(gates: dict[str, int], rejected: int) -> str:
+    """Which constraint actually turned candidates away.
+
+    `ai_score` is left out: when pre-screening rejects a candidate the AI is
+    never asked, the score stays at its default zero and the gate fails
+    mechanically on every one of those rows — it would top the chart at 100%
+    while saying nothing. Candidates commonly fail several gates at once, so
+    these percentages deliberately do not sum to 100.
+    """
+    ranked = sorted(
+        ((gate, count) for gate, count in gates.items() if gate != "ai_score" and count),
+        key=lambda item: -item[1],
+    )
+    if not ranked or not rejected:
+        return '<p class="source-note">No rejections in the journal yet.</p>'
+    worst = ranked[0][1]
+    rows = []
+    for gate, count in ranked:
+        share = count / rejected * 100
+        rows.append(
+            f"<tr><td>{_escape(_GATE_LABELS.get(gate, gate))}</td>"
+            f'<td><code class="gate-code">{_escape(gate)}</code></td>'
+            f'<td class="num">{count:,}</td><td class="num">{share:.1f}%</td>'
+            f'<td><div class="bar-track"><div class="bar-fill bar-gate" '
+            f'style="width:{count / worst * 100:.1f}%"></div></div></td></tr>'
+        )
+    return (
+        '<div class="card"><table><thead><tr><th>Why it was turned away</th><th>Gate</th>'
+        '<th class="num">Candidates</th><th class="num">Share</th><th></th></tr></thead>'
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
+def _funnel_html(data: dict[str, object]) -> str:
+    scanned = int(data["scanned"])
+    consulted = int(data["ai_consulted"])
+    approved = int(data["approved"])
+
+    def share(part: int) -> str:
+        """Shares are meaningless before the agent has scanned anything, and
+        computing them anyway divides by zero on an empty journal."""
+        return f"{part / scanned * 100:.2f}% of everything priced" if scanned else "no candidates yet"
+
+    return f"""
+<div class="stats">
+  <div class="stat"><div class="label">Candidates priced</div><b>{scanned:,}</b>
+    <div class="stat-note">every viable strike pair, every expiry, every scan</div></div>
+  <div class="stat"><div class="label">Reached the AI</div><b>{consulted:,}</b>
+    <div class="stat-note">{share(consulted)} — the rest failed a deterministic gate first</div></div>
+  <div class="stat"><div class="label">Approved to trade</div><b class="pnl-positive">{approved:,}</b>
+    <div class="stat-note">{share(approved)}</div></div>
+  <div class="stat"><div class="label">AI calls avoided</div><b>{scanned - consulted:,}</b>
+    <div class="stat-note">pre-screening before spending a token</div></div>
+</div>"""
+
+
 def _decision_badge(final_decision: str) -> str:
     css_class = "badge-approve" if final_decision == "APPROVE" else "badge-reject"
     return f'<span class="badge {css_class}">{final_decision}</span>'
@@ -373,6 +477,12 @@ tbody tr:hover{background:var(--bg)}
 .badge-muted{background:var(--border-soft);color:var(--text-muted)}
 .bar-track{display:flex;width:130px;height:16px;background:var(--border-soft);border-radius:4px;overflow:hidden}
 .bar-fill{height:100%;border-radius:4px}
+.bar-gate{background:var(--text-muted);opacity:.55}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.stat-note{margin-top:5px;font-size:11.5px;line-height:1.45;color:var(--text-muted);
+  white-space:normal;font-weight:500}
+.gate-code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--text-muted);
+  background:var(--neutral-soft);border-radius:4px;padding:1px 5px}
 .bar-positive{background:var(--accent)} .bar-negative{background:var(--danger)}
 .rationale-cell{white-space:normal;max-width:340px;color:var(--text-muted);font-size:12.5px}
 .rationale-row td{white-space:normal;border-top:0;padding:0 16px 12px;color:var(--text-muted);
@@ -465,9 +575,9 @@ def _portfolio_stats_html() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def overview_page() -> str:
-    counts = decision_counts()
-    scanned = counts["total"]
-    approved = counts["approved"]
+    funnel = rejection_funnel()
+    scanned = int(funnel["scanned"])
+    approved = int(funnel["approved"])
     approval_pct = round(approved / scanned * 100, 2) if scanned else 0.0
 
     # A "Portfolio: unavailable" tile reads as a broken panel. The note above
@@ -482,13 +592,17 @@ def overview_page() -> str:
     body = f"""
 {_source_identity_html()}
 {portfolio_section}
-<h2>Agent activity</h2>
-<div class="stats">
-  <div class="stat"><div class="label">Scanned candidates</div><b>{scanned:,}</b></div>
-  <div class="stat"><div class="label">Approved</div><b class="pnl-positive">{approved:,}</b></div>
-  <div class="stat"><div class="label">Rejected</div><b class="muted">{scanned - approved:,}</b></div>
-  <div class="stat"><div class="label">Approval rate</div><b>{approval_pct}%</b></div>
-</div>"""
+<h2>From candidate to trade</h2>
+{_funnel_html(funnel)}
+
+<h2>What the risk engine turned away</h2>
+<p class="source-note">The deterministic gates, ranked by how many candidates
+each one stopped. A candidate can fail several at once, so the shares add up to
+more than 100% — the tallest bar is the constraint actually binding. This is the
+whole design in one table: the gates do the deciding, and only
+<b>{int(funnel['ai_consulted']):,}</b> of <b>{scanned:,}</b> candidates were ever
+worth asking the AI about.</p>
+{_gate_breakdown_html(funnel["gates"], scanned - approved)}"""
     return _page("Overview", "/", body)
 
 

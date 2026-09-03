@@ -386,6 +386,63 @@ class DecisionRepository:
         with self._engine.connect() as conn:
             return int(conn.execute(query).scalar_one())
 
+    #: The deterministic gates, in the order the engine applies them.
+    RISK_GATES = (
+        "paper_mode", "dte", "credit", "liquidity_spread", "open_interest", "volume",
+        "defined_risk", "position_limit", "daily_loss", "portfolio_risk",
+        "duplicate_exposure", "sizing", "ai_score",
+    )
+
+    def count_gate_failures(
+        self, start: str | None = None, end: str | None = None, symbol: str | None = None,
+    ) -> dict[str, int]:
+        """How many candidates each risk gate turned away.
+
+        Counted with one conditional-sum pass over the text column rather than
+        by parsing 40,000+ JSON blobs in Python, which would mean transferring
+        the whole journal to render one panel. Matching on `"<gate>": false`
+        works identically on SQLite and Postgres, so the dashboard behaves the
+        same against a local file and against Supabase.
+
+        A candidate can fail several gates at once, so these do not sum to the
+        rejection count — that is the point: it shows which constraint is
+        actually binding.
+        """
+        columns = [
+            func.sum(
+                case((decisions_table.c.risk_checks.like(f'%"{gate}": false%'), 1), else_=0)
+            ).label(gate)
+            for gate in self.RISK_GATES
+        ]
+        query = select(*columns).where(decisions_table.c.final_decision == "REJECT")
+        if start:
+            query = query.where(decisions_table.c.timestamp >= start)
+        if end:
+            query = query.where(decisions_table.c.timestamp < f"{end}T23:59:59.999999")
+        if symbol:
+            query = query.where(decisions_table.c.symbol == symbol)
+        with self._engine.connect() as conn:
+            row = conn.execute(query).one()
+        return {gate: int(value or 0) for gate, value in zip(self.RISK_GATES, row)}
+
+    def count_ai_consulted(
+        self, start: str | None = None, end: str | None = None, symbol: str | None = None,
+    ) -> int:
+        """Candidates that reached the AI, i.e. survived every deterministic
+        gate that runs before it. The gap between this and the scanned total is
+        what pre-screening saves in API calls."""
+        query = select(func.count()).select_from(decisions_table).where(
+            ~decisions_table.c.ai_decision.like("%ai_skipped_deterministic_reject%")
+        )
+        if start:
+            query = query.where(decisions_table.c.timestamp >= start)
+        if end:
+            query = query.where(decisions_table.c.timestamp < f"{end}T23:59:59.999999")
+        if symbol:
+            query = query.where(decisions_table.c.symbol == symbol)
+        with self._engine.connect() as conn:
+            return int(conn.execute(query).scalar_one())
+
     def distinct_symbols(self) -> list[str]:
         with self._engine.connect() as conn:
             rows = conn.execute(select(decisions_table.c.symbol).distinct().order_by(decisions_table.c.symbol)).all()
