@@ -1,123 +1,117 @@
-# Demo script (3-5 minutes)
+# Demo script (4 minutes)
 
-Goal: show the full story — market detected -> opportunity found -> AI
-analyzed it -> risk engine approved it -> Alpaca executed it -> agent
-monitored it -> agent exited -> P&L recorded — and prove every trade (or
-rejection) is explainable.
+Judging weighs P&L, technology, creativity and presentation. So this is not a
+code tour: it shows a system that is *running*, and the evidence that its
+numbers are real. Source code is one click away in the repo if a judge wants
+it — spending video time scrolling through files trades away the part only a
+video can deliver.
 
-Setup beforehand (not part of the timed demo):
+**Lead with the funnel.** 42,926 candidates priced, 52 worth asking the AI
+about, 32 traded. That single line is the architecture, the cost argument and
+the discipline all at once, and it is the thing no other submission will have.
 
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env
-# fill in paper ALPACA_API_KEY / ALPACA_SECRET_KEY in .env
-# (DATABASE_URL optional — empty uses a local SQLite file)
-pytest -q
-```
+## Before recording
 
-## 0:00 - 0:30 — Framing
+- Open **https://alpaca-hackathon.vercel.app** a few minutes early. Vercel's
+  free tier cold-starts in ~5s; a judge watching you wait is a bad first
+  impression, and so is a cold start in the recording.
+- Have three tabs ready: the live dashboard, the Alpaca paper account for
+  `PA3XHQWG6YPZ`, and a terminal in the repo.
+- Warm the numbers you plan to read aloud — they move while the agent runs.
+- Screen recording with voiceover is enough. Face cam optional; legible text
+  is not. Record at 1080p and keep the browser zoom high enough that the
+  tables are readable after compression.
 
-"This is Riskgate: an autonomous paper-trading agent that trades
-Bull Put Spreads. The one rule the whole system is built around: the AI can
-analyze and propose, but a deterministic Risk Engine is the only thing that
-can approve a trade. Everything runs against a $100,000 Alpaca **paper**
-account — no real capital, ever."
+## 0:00 - 0:25 — The number, then the rule
 
-Show `.env`: `PAPER_TRADING_ONLY=true`, `ALPACA_PAPER=true`.
+"This agent priced 42,926 option spreads this week. It asked the AI about 52 of
+them. It traded 32. That ratio is the whole design: **the AI proposes, and a
+deterministic risk engine decides.**"
 
-## 0:30 - 1:15 — Read-only integration + MCP
+Show the Overview funnel while saying it.
 
-```powershell
-.\.venv\Scripts\python.exe scripts\integration_check.py
-```
+## 0:25 - 1:00 — Why that order matters
 
-"This confirms we're really talking to Alpaca paper: account status, live
-stock quotes, real option contracts, real option quotes." Point at
-`READ-ONLY INTEGRATION CHECK PASSED`.
+"Most people would wire an LLM to the order endpoint and let it decide. Here
+the deterministic gates run *first* — liquidity, days to expiry, credit,
+defined risk, portfolio budget, duplicate exposure — and they reject 99.9% of
+candidates before a single token is spent. Then the AI gives a structured,
+schema-validated opinion. Then the gates run **again**, and the order manager
+re-checks the verdict before it will submit anything."
 
-```powershell
-.\.venv\Scripts\python.exe scripts\mcp_read_only_demo.py
-```
+"The AI can veto a trade. It can never force one through. There is no code path
+from an AI response to `submit_order`."
 
-"And this is the official Alpaca MCP Server — the same server you could
-point Claude Desktop or Cursor at and ask 'what's my paper account balance'
-in plain English. It lists the tools it exposes and calls two read-only
-ones: account info and an option chain lookup."
+## 1:00 - 2:00 — The live dashboard
 
-## 1:15 - 2:30 — One trade end to end
+Scroll the Overview to **What the risk engine turned away**:
 
-Run (or reference) the workflow test / a small driver script that builds one
-candidate, runs `TradeWorkflow.evaluate`, and prints the result — or walk
-through `tests/test_workflow.py` live:
+"This is which constraint is actually binding. Duplicate exposure stopped
+40,893 candidates — 95%. Thin open interest, 24,573. So the 0.07% approval rate
+isn't the strategy being arbitrary: the agent is simply already exposed to
+almost everything it watches, and it refuses to double up."
 
-"Here's one Bull Put Spread candidate on AAPL. It goes through: scoring
-(market regime, trend, volatility, liquidity, risk/reward — all numeric, no
-LLM), then the AI Analyst, which returns a structured, Pydantic-validated
-proposal — score, confidence, rationale, risk flags. If that JSON is
-malformed or missing, we hard-reject; we never guess."
+Then the **Decision Journal**:
 
-"Now the Risk Engine: paper mode, DTE window, minimum credit, bid/ask
-spread, open interest, volume, defined-risk check, daily loss circuit
-breaker, portfolio risk, duplicate exposure, position count, AI score
-threshold — and automatic position sizing from account equity, not a
-hardcoded number of contracts."
+"Every candidate it ever priced is here — approved or rejected — with the
+strikes, the expiry, and the exact gates it failed. One scan prices every strike
+pair on every expiry, so you see dozens of rows a minute that differ by strike,
+not by repetition."
 
-Show the approved result: `execution.submitted == True`, and — with
-`DRY_RUN=true` — that no real order was placed, just a simulated one.
+Filter to `APPROVE` to surface the AI rationale rows:
 
-## 2:30 - 3:15 — Monitoring and exit
+"And where the AI *was* consulted, its actual reasoning is on the record —
+implied volatility below realized, regime aligned with trend. Structured JSON in,
+validated schema out. A malformed response becomes a forced reject, never a
+guess."
 
-```powershell
-.\.venv\Scripts\python.exe scripts\monitor_positions.py
-```
+## 2:00 - 2:45 — Proof the numbers are real
 
-"This is the position manager loop: for every open trade it fetches a live
-quote, checks profit target / stop loss / days-to-expiration / regime, and —
-if a rule fires — closes the spread and journals the realized P&L. It never
-holds to expiration by default, and if a quote isn't available it skips the
-position instead of guessing a fill price."
+Switch to the Alpaca account: equity above $100,000, real filled multi-leg
+orders.
 
-## 3:15 - 4:15 — Dashboard: the "why"
+"Paper account `PA3XHQWG6YPZ`, up about $900. And I didn't take the journal's
+word for that."
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.dashboard.app:app --reload
+.\.venv\Scripts\python.exe scripts\reconcile_journal.py
 ```
 
-Open `http://127.0.0.1:8000`. "Four pages: Overview, Daily KPIs, Positions &
-Trades, Decision Journal. Every position with entry credit, strikes, exit
-reason and realized P&L. The decision journal — for literally every
-candidate we ever evaluated, approved or rejected, you can see the AI score
-and the exact rationale behind the call. And every page filters by a real
-date range, symbol, or decision — not just 'last N rows'."
+"This reconciles every journalled trade against the broker's own orders. All 14
+openings exist at Alpaca. Six expired unfilled — journalled at zero. And across
+every trade the broker can price, the journal and the actual fills agree to
+within **$5.50 in total**. The broker is the authority on performance; the
+journal explains reasoning. The dashboard says so on every page that shows
+P&L."
 
-"This same journal lives in Supabase, not just a local file — GitHub
-Actions, this local dashboard, and an optional public copy hosted on Vercel
-all read and write the exact same live data. No separate sync step, no
-stale snapshot."
+## 2:45 - 3:30 — What live testing found that tests didn't
 
-## 4:15 - 4:45 — Bugs live testing actually found
+"Three things only showed up by running this for real."
 
-"Unit tests can't catch everything. Running this against a real paper
-account with the AI actually connected surfaced two real bugs: the AI was
-being called on every single candidate, even ones a cheap deterministic
-check had already ruled out — timing us out scanning 200 real candidates.
-And a risk check for 'don't open two positions on the same underlying' was
-only computed once per scan instead of per candidate, letting three
-positions open on the same symbol in one run. Both are fixed now, and both
-were only found by actually running it, not by writing more unit tests."
+1. "The AI was being called on every candidate, including ones a cheap
+   deterministic check had already killed — that's what the pre-screen fixed,
+   and it's where the 52-out-of-42,926 comes from."
+2. "A duplicate-exposure check computed once per scan instead of per candidate
+   let three positions open on one underlying in a single run."
+3. "GitHub Actions' own cron fired once in several hours despite a valid
+   five-minute schedule, so the production trigger is an external scheduler
+   calling the workflow API. And Supabase's pooler connection string carries a
+   parameter `psycopg2` rejects outright — found against the real service, not
+   assumed to work."
 
-If time allows, mention the infrastructure lessons too: "We also found
-GitHub Actions' own cron scheduler doesn't reliably fire every 5 minutes —
-one run in several hours — so the agent is actually triggered by an
-external scheduler instead. And wiring up the shared Supabase database
-surfaced a connection-string parameter our driver didn't actually support —
-found by testing against the real service, not assumed to work."
+## 3:30 - 4:00 — Limits, then close
 
-## 4:45 - 5:00 — Close
+"Two things I deliberately didn't fake. There's no earnings filter, because
+Alpaca doesn't expose a reliable earnings calendar. And the backtest reconstructs
+option prices with Black-Scholes over real historical stock prices, because the
+historical option data isn't deep enough to replay honestly — so it's labelled
+theoretical everywhere it appears."
 
-"Everything here is paper-only, fail-closed, and the LLM never has a direct
-line to `submit_order` — the Risk Engine is the only gate. That's the whole
-pitch: an AI that explains and proposes, and a deterministic engine that
-decides."
+"Everything is paper-only, enforced at two separate points. The LLM explains and
+proposes. A deterministic engine decides. That's the pitch."
+
+## If you only have 2 minutes
+
+Keep: the funnel (0:00-0:25), the gate breakdown (1:00-1:30), the reconciliation
+(2:00-2:30), the close. Drop the bug list and the limitations — they live in the
+write-up, and the repo is linked.
