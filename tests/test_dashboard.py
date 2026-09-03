@@ -112,7 +112,7 @@ def test_overview_names_the_journal_it_is_reading(tmp_path, monkeypatch) -> None
     response = client.get("/")
 
     assert "identity.db" in response.text
-    assert "no credentials" in response.text  # account fetching is off
+    assert "are unavailable" in response.text  # account fetching is off
 
 
 def test_overview_reports_the_postgres_schema_from_database_url(tmp_path, monkeypatch) -> None:

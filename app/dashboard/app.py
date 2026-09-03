@@ -353,18 +353,23 @@ def _source_identity_html() -> str:
     place, DATABASE_URL in another — so pairing one account's portfolio with
     another account's trades is an easy and completely silent mistake. Stating
     both makes it visible at a glance."""
+    journal = f"<b>{_escape(_journal_schema())}</b>"
     account_data = account_snapshot()
-    account_label = (
-        str(account_data.get("account_number") or "").strip() or "unknown account"
-        if account_data is not None
-        else "no credentials"
-    )
+    if account_data is None:
+        # Nothing to pair, so nothing to get wrong — say what is on the page
+        # instead of warning about a mismatch that cannot happen.
+        return (
+            f'<p class="source-note">Showing journal {journal}. Portfolio figures '
+            "are unavailable: no Alpaca credentials are configured here, and this "
+            "page never needs them — it only reads the journal.</p>"
+        )
+    account = str(account_data.get("account_number") or "").strip()
     return (
         f'<p class="source-note">Portfolio figures come from Alpaca account '
-        f"<b>{_escape(account_label)}</b>; the tables below come from journal "
-        f"<b>{_escape(_journal_schema())}</b>. These are configured separately — "
-        "if they name different accounts, the two halves of this page describe "
-        "different things.</p>"
+        f"<b>{_escape(account or 'unidentified')}</b>; the tables below come from "
+        f"journal {journal}. These are configured separately — if they name "
+        "different accounts, the two halves of this page describe different "
+        "things.</p>"
     )
 
 
