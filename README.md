@@ -7,9 +7,19 @@ and executes only what a fully deterministic **Risk Engine** approves — with
 automatic position sizing, configurable exit rules, and a full audit trail
 of why every candidate was approved or rejected.
 
-**The one rule everything is built around: the AI proposes, it never
-decides.** Its output is Pydantic-validated before it can influence
-anything, and even a valid "APPROVE" can be overridden by the Risk Engine.
+**The one rule everything is built around: the AI's power is purely
+subtractive — it can stop a trade, never start one.** Its output is
+Pydantic-validated before it can influence anything, and an invalid or
+missing response becomes a forced reject.
+
+Concretely, from this week's journal: of 42,926 candidates priced, the
+deterministic gates rejected 42,874 before the AI was consulted at all. The
+52 that reached it had already cleared every gate, so among those the AI's
+verdict decided the outcome — 32 approved, 20 rejected, all 20 on the AI
+score. The engine chooses which candidates the AI may weigh in on, and it
+alone sizes what gets through; an order needs both to consent. The AI can
+never cause a trade the rules would have refused.
+
 This has been verified by actually running the agent against a live paper
 account — see [Found by live testing](#found-by-live-testing-not-just-unit-tests)
 for two real bugs that surfaced that way, not from unit tests alone.

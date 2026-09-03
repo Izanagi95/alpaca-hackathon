@@ -46,19 +46,21 @@ carries the funnel numbers.
 >
 > "So I did not give the AI the order button."
 
-## 0:45 - 1:15 · Slide 4 "The AI proposes. The Risk Engine decides."
+## 0:45 - 1:15 · Slide 4 "The AI can stop a trade. It can never start one."
 
 Stay on this slide. It is the most important one.
 
 > "Fixed rules run first. Liquidity. Credit. Days to expiry. Risk budget."
 >
-> "They reject ninety-nine percent of candidates. No AI call. No cost."
+> "They stopped forty-two thousand candidates. The AI was never asked."
 >
-> "Then the AI gives a structured opinion."
+> "Fifty-two passed. Those went to the AI."
 >
-> "Then the rules run again, before any order."
+> "The AI stopped twenty of them."
 >
-> "The AI can block a trade. It can never force one."
+> "Thirty-two cleared both. And only the rules decide the size."
+>
+> "Each side can refuse. Neither can approve alone."
 
 ---
 

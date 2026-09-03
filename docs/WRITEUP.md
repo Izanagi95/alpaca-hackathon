@@ -11,8 +11,24 @@ was approved or rejected.
 
 ## Why the architecture is safe by design
 
-The single rule the system is built around: **the LLM proposes, it never
-decides.** `AIDecisionLayer` returns a Pydantic-validated `AIProposal`
+The rule the system is built around: **the LLM's power is purely subtractive
+— it can stop a trade, never start one.**
+
+That is a narrower claim than "the AI only advises", and the journal shows
+why the narrower one is the honest version. Of 42,926 candidates priced, the
+deterministic gates rejected 42,874 before the AI was consulted at all. The
+52 survivors had already passed every deterministic gate — so among *those*,
+the AI's verdict was decisive: 32 approved, 20 rejected, and all 20 fell on
+the AI score, not one on a risk gate. The engine does not overrule the AI on
+the candidates that reach it; it decides which candidates the AI is allowed
+to weigh in on, and it alone sizes whatever gets through.
+
+So neither party can authorise a trade by itself. The engine's consent is a
+precondition, the AI's is the last word among the candidates that earn one,
+and an order requires both. What the AI can never do — the property that
+matters — is cause a trade that the deterministic rules would have refused.
+
+`AIDecisionLayer` returns a Pydantic-validated `AIProposal`
 (decision, score, confidence, rationale, risk flags) or, on any invalid or
 missing response, a forced `REJECT`. That proposal then passes through
 `RiskEngine.evaluate()` — a pure function with no LLM involvement — which
