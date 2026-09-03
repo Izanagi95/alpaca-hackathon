@@ -10,6 +10,17 @@ figure is never mistaken for account performance.
 It needs credentials and DATABASE_URL for the *same* account — a mismatched
 pair produces zero matches, which is reported rather than silently treated as
 "every trade is missing at the broker".
+
+Two limitations worth knowing before reading its output as a verdict:
+
+* Closing orders are matched only by the `close_client_order_id` the journal
+  stored. A trade whose exit was re-armed and re-sent under a new id therefore
+  reports as NO CLOSE even though the broker did close it — so NO CLOSE means
+  "this script cannot find the closing order", not "this P&L is fictitious".
+  Check it against the account's equity before concluding anything.
+* A trade still open after a *partial* close carries realized P&L for the
+  portion that closed. Those rows are counted in the journal total but have no
+  head-to-head comparison, so the buckets below need not sum to that total.
 """
 
 from __future__ import annotations

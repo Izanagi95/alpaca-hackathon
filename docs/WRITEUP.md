@@ -82,14 +82,24 @@ when the decision happens — but an order that is submitted is not yet a
 position. Early in the run this mattered: an order that never filled still
 appeared as an open position, and the monitor would "close" it against a
 favourable quote and journal a realized P&L for something the broker never
-held. Running three accounts with different parameter sets made the size of the
-problem measurable, by reconciling each journal against its own broker
-account leg by leg: on one account the journal came to +$892 (realized plus
-the live value of positions the broker really held) against +$901 of actual
-equity gain, within 1%; on another it came to +$854 against +$584, overstated
-by 46%. The gap tracked exactly how often that account's orders failed to
-fill — three of its five journalled open positions had no counterpart at the
-broker at all.
+held. Rather than argue about it, `scripts/reconcile_journal.py` measures it:
+it classifies every journalled trade against the broker's own orders — never
+filled, filled at a different size, closed only in the journal, or reconciled
+— and compares realized P&L only on the rows the broker can actually price.
+On the account submitted for judging, all 14 journalled openings exist at the
+broker; 6 expired without ever filling (journalled at zero, so no P&L effect);
+and across every trade the broker can price, the journal and the actual fills
+agree to within $5.50 in total, the largest single row differing by $3. The
+journal's arithmetic is sound.
+
+Three rows written on the first day, before fill confirmation landed, are
+marked closed with no recorded closing order behind them, carrying +$202.70.
+Adding those to the +$608 the broker's fills confirm, plus +$87 of live
+unrealized value, gives +$897.70 against +$901.29 of actual equity gain — a
+$3.59 residual, which says that P&L was genuinely earned and the journal
+merely lost the link to the closing order that earned it. That distinction
+matters: "closed only in the journal" is a broken reference, not invented
+money, and only reconciliation against the broker can tell the two apart.
 
 The execution path now confirms fill state before acting on a position: the
 monitor fetches the real order status, marks an order that ended
