@@ -1,117 +1,128 @@
-# Demo script (4 minutes)
+# Demo script (3 minutes)
 
-Judging weighs P&L, technology, creativity and presentation. So this is not a
-code tour: it shows a system that is *running*, and the evidence that its
-numbers are real. Source code is one click away in the repo if a judge wants
-it — spending video time scrolling through files trades away the part only a
-video can deliver.
+Written to be **spoken by a non-native English speaker**: short sentences, plain
+words, one idea per line. Roughly 320 words of narration — about 3 minutes at a
+calm pace. Every line is short enough to say in one breath, so you can record it
+in small takes and stop wherever you need to.
 
-**Lead with the funnel.** 42,926 candidates priced, 52 worth asking the AI
-about, 32 traded. That single line is the architecture, the cost argument and
-the discipline all at once, and it is the thing no other submission will have.
+The screen does most of the work. You do not have to describe what is visible —
+just say the number and let the viewer see it.
+
+Judging weighs P&L, technology, creativity and presentation. So this shows a
+running system, not the source code. The repo is one click away.
 
 ## Before recording
 
-- Open **https://alpaca-hackathon.vercel.app** a few minutes early. Vercel's
-  free tier cold-starts in ~5s; a judge watching you wait is a bad first
-  impression, and so is a cold start in the recording.
-- Have three tabs ready: the live dashboard, the Alpaca paper account for
-  `PA3XHQWG6YPZ`, and a terminal in the repo.
-- Warm the numbers you plan to read aloud — they move while the agent runs.
-- Screen recording with voiceover is enough. Face cam optional; legible text
-  is not. Record at 1080p and keep the browser zoom high enough that the
-  tables are readable after compression.
+- Open **https://alpaca-hackathon.vercel.app** five minutes early. The free
+  Vercel tier is slow on the first request.
+- Three tabs: the live dashboard, the Alpaca account `PA3XHQWG6YPZ`, a terminal.
+- Check the numbers again before you record. They change while the agent runs.
+- Zoom the browser in. Text must stay readable after video compression.
+- Speak slowly. Slow and clear is better than fast and fluent.
 
-## 0:00 - 0:25 — The number, then the rule
+---
 
-"This agent priced 42,926 option spreads this week. It asked the AI about 52 of
-them. It traded 32. That ratio is the whole design: **the AI proposes, and a
-deterministic risk engine decides.**"
+## 0:00 - 0:20 — Open with the number
 
-Show the Overview funnel while saying it.
+*Show: the Overview funnel.*
 
-## 0:25 - 1:00 — Why that order matters
+> "This agent priced forty-two thousand option spreads this week."
+>
+> "It asked the AI about fifty-two of them."
+>
+> "It traded thirty-two."
+>
+> "This is the design: the AI proposes. A risk engine decides."
 
-"Most people would wire an LLM to the order endpoint and let it decide. Here
-the deterministic gates run *first* — liquidity, days to expiry, credit,
-defined risk, portfolio budget, duplicate exposure — and they reject 99.9% of
-candidates before a single token is spent. Then the AI gives a structured,
-schema-validated opinion. Then the gates run **again**, and the order manager
-re-checks the verdict before it will submit anything."
+## 0:20 - 0:50 — The rule
 
-"The AI can veto a trade. It can never force one through. There is no code path
-from an AI response to `submit_order`."
+*Show: the four funnel tiles, then scroll down slowly.*
 
-## 1:00 - 2:00 — The live dashboard
+> "Many agents let the model send the order. This one does not."
+>
+> "First, deterministic gates run. Liquidity. Credit. Days to expiry. Risk
+> budget."
+>
+> "They reject ninety-nine percent of candidates. No AI call. No cost."
+>
+> "Then the AI gives a structured opinion."
+>
+> "Then the gates run again, before any order."
+>
+> "The AI can block a trade. It can never force one."
 
-Scroll the Overview to **What the risk engine turned away**:
+## 0:50 - 1:30 — Why it rejects so much
 
-"This is which constraint is actually binding. Duplicate exposure stopped
-40,893 candidates — 95%. Thin open interest, 24,573. So the 0.07% approval rate
-isn't the strategy being arbitrary: the agent is simply already exposed to
-almost everything it watches, and it refuses to double up."
+*Show: "What the risk engine turned away".*
 
-Then the **Decision Journal**:
+> "Here is which rule stopped what."
+>
+> "Duplicate exposure: forty thousand candidates. Ninety-five percent."
+>
+> "The agent already holds a position in almost every symbol it watches."
+>
+> "So it refuses to double up. That is the whole reason for the low approval
+> rate."
 
-"Every candidate it ever priced is here — approved or rejected — with the
-strikes, the expiry, and the exact gates it failed. One scan prices every strike
-pair on every expiry, so you see dozens of rows a minute that differ by strike,
-not by repetition."
+## 1:30 - 2:00 — Every decision is on the record
 
-Filter to `APPROVE` to surface the AI rationale rows:
+*Show: Decision Journal. Then filter to APPROVE.*
 
-"And where the AI *was* consulted, its actual reasoning is on the record —
-implied volatility below realized, regime aligned with trend. Structured JSON in,
-validated schema out. A malformed response becomes a forced reject, never a
-guess."
+> "Every candidate is here. Approved or rejected."
+>
+> "The strikes. The expiry. The exact rules it failed."
+>
+> "And where the AI was asked, its reasoning is saved too."
+>
+> "Structured data in. Validated schema out. A bad response becomes a reject."
 
-## 2:00 - 2:45 — Proof the numbers are real
+## 2:00 - 2:40 — The numbers are real
 
-Switch to the Alpaca account: equity above $100,000, real filled multi-leg
-orders.
+*Show: the Alpaca account. Then run the command.*
 
-"Paper account `PA3XHQWG6YPZ`, up about $900. And I didn't take the journal's
-word for that."
+> "This is the paper account. Up about nine hundred dollars."
+>
+> "I did not trust my own journal. I checked it."
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\reconcile_journal.py
 ```
 
-"This reconciles every journalled trade against the broker's own orders. All 14
-openings exist at Alpaca. Six expired unfilled — journalled at zero. And across
-every trade the broker can price, the journal and the actual fills agree to
-within **$5.50 in total**. The broker is the authority on performance; the
-journal explains reasoning. The dashboard says so on every page that shows
-P&L."
+> "This compares every trade against the broker's real orders."
+>
+> "All fourteen exist. Six never filled. Those are recorded as zero."
+>
+> "The rest agree with the real fills, within five dollars and fifty cents."
+>
+> "The broker is the truth about money. The journal explains the reasoning."
 
-## 2:45 - 3:30 — What live testing found that tests didn't
+## 2:40 - 3:00 — Close
 
-"Three things only showed up by running this for real."
+*Show: the Overview one more time.*
 
-1. "The AI was being called on every candidate, including ones a cheap
-   deterministic check had already killed — that's what the pre-screen fixed,
-   and it's where the 52-out-of-42,926 comes from."
-2. "A duplicate-exposure check computed once per scan instead of per candidate
-   let three positions open on one underlying in a single run."
-3. "GitHub Actions' own cron fired once in several hours despite a valid
-   five-minute schedule, so the production trigger is an external scheduler
-   calling the workflow API. And Supabase's pooler connection string carries a
-   parameter `psycopg2` rejects outright — found against the real service, not
-   assumed to work."
+> "Two things I did not fake. There is no earnings filter — the data is not
+> reliable. And the backtest is theoretical. It says so everywhere."
+>
+> "Paper trading only. Checked twice before any order."
+>
+> "The AI explains. The engine decides."
 
-## 3:30 - 4:00 — Limits, then close
+---
 
-"Two things I deliberately didn't fake. There's no earnings filter, because
-Alpaca doesn't expose a reliable earnings calendar. And the backtest reconstructs
-option prices with Black-Scholes over real historical stock prices, because the
-historical option data isn't deep enough to replay honestly — so it's labelled
-theoretical everywhere it appears."
+## If you want 2 minutes
 
-"Everything is paper-only, enforced at two separate points. The LLM explains and
-proposes. A deterministic engine decides. That's the pitch."
+Keep 0:00-0:20, 0:50-1:30, 2:00-2:40, and the last two lines. Drop the rest.
 
-## If you only have 2 minutes
+## Words to avoid while speaking
 
-Keep: the funnel (0:00-0:25), the gate breakdown (1:00-1:30), the reconciliation
-(2:00-2:30), the close. Drop the bug list and the limitations — they live in the
-write-up, and the repo is linked.
+If a word is hard to say, replace it. Meaning matters more than vocabulary:
+
+| Hard | Say instead |
+|---|---|
+| deterministic | fixed rules / the rules |
+| reconciliation | I checked it against the broker |
+| duplicate exposure | two positions on the same stock |
+| schema-validated | checked against a strict format |
+| candidate | option spread |
+
+You can also put these words on screen as text and simply say the short version.
