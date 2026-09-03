@@ -1,84 +1,101 @@
-# Demo script (3 minutes)
+# Video script — slides + live demo (3 min 30)
+
+The submission asks for a slide deck **and** a video. The deck is submitted
+whole, on its own. The video does not walk through all eleven slides — it uses
+five of them as the spine, then switches to the running system for the middle,
+then returns to the deck to close. Slides carry the argument; the live product
+proves it.
 
 Written to be **spoken by a non-native English speaker**: short sentences, plain
-words, one idea per line. Roughly 320 words of narration — about 3 minutes at a
-calm pace. Every line is short enough to say in one breath, so you can record it
-in small takes and stop wherever you need to.
+words, one idea per line. About 300 words of narration in 3:30, so there is room
+to speak slowly and to pause on each screen.
 
-The screen does most of the work. You do not have to describe what is visible —
-just say the number and let the viewer see it.
-
-Judging weighs P&L, technology, creativity and presentation. So this shows a
-running system, not the source code. The repo is one click away.
+**Deck:** https://claude.ai/code/artifact/b4e5900c-800f-4264-8d20-954c240d5fb0
+(arrow keys or click the edges to advance)
 
 ## Before recording
 
 - Open **https://alpaca-hackathon.vercel.app** five minutes early. The free
   Vercel tier is slow on the first request.
-- Three tabs: the live dashboard, the Alpaca account `PA3XHQWG6YPZ`, a terminal.
-- Check the numbers again before you record. They change while the agent runs.
-- Zoom the browser in. Text must stay readable after video compression.
-- Speak slowly. Slow and clear is better than fast and fluent.
+- Four tabs: the deck, the live dashboard, the Alpaca account `PA3XHQWG6YPZ`,
+  a terminal.
+- Check the numbers again before recording. They change while the agent runs.
+- Zoom in. Text must stay readable after video compression.
+- Speak slowly. Slow and clear beats fast and fluent.
 
 ---
 
-## 0:00 - 0:20 — Open with the number
+# PART 1 — SLIDES (0:00 - 1:15)
 
-*Show: the Overview funnel.*
+## 0:00 - 0:20 · Slide 1 "Riskgate" + Slide 8 "Dashboard"
 
-> "This agent priced forty-two thousand option spreads this week."
+Start on the title slide. Then jump straight to the dashboard slide, which
+carries the funnel numbers.
+
+> "This is Riskgate. An autonomous options trading agent on Alpaca."
+>
+> "This week it priced forty-two thousand option spreads."
 >
 > "It asked the AI about fifty-two of them."
 >
 > "It traded thirty-two."
+
+## 0:20 - 0:45 · Slide 2 "The problem"
+
+> "Options carry real risk. A model that sounds confident is not enough."
 >
-> "This is the design: the AI proposes. A risk engine decides."
+> "So I did not give the AI the order button."
 
-## 0:20 - 0:50 — The rule
+## 0:45 - 1:15 · Slide 4 "The AI proposes. The Risk Engine decides."
 
-*Show: the four funnel tiles, then scroll down slowly.*
+Stay on this slide. It is the most important one.
 
-> "Many agents let the model send the order. This one does not."
->
-> "First, deterministic gates run. Liquidity. Credit. Days to expiry. Risk
-> budget."
+> "Fixed rules run first. Liquidity. Credit. Days to expiry. Risk budget."
 >
 > "They reject ninety-nine percent of candidates. No AI call. No cost."
 >
 > "Then the AI gives a structured opinion."
 >
-> "Then the gates run again, before any order."
+> "Then the rules run again, before any order."
 >
 > "The AI can block a trade. It can never force one."
 
-## 0:50 - 1:30 — Why it rejects so much
+---
 
-*Show: "What the risk engine turned away".*
+# PART 2 — LIVE DEMO (1:15 - 3:05)
 
-> "Here is which rule stopped what."
+Switch to the browser. Say it out loud so the change is clear:
+
+> "This is not a mockup. It is running right now."
+
+## 1:15 - 1:35 · Dashboard Overview — the funnel
+
+> "Same four numbers, live."
 >
-> "Duplicate exposure: forty thousand candidates. Ninety-five percent."
->
-> "The agent already holds a position in almost every symbol it watches."
->
-> "So it refuses to double up. That is the whole reason for the low approval
-> rate."
+> "Every candidate is priced from the real option chain."
 
-## 1:30 - 2:00 — Every decision is on the record
+## 1:35 - 2:05 · "What the risk engine turned away"
 
-*Show: Decision Journal. Then filter to APPROVE.*
+> "This is which rule stopped what."
+>
+> "Two positions on the same stock: forty thousand candidates. Ninety-five
+> percent."
+>
+> "The agent already holds almost every symbol it watches."
+>
+> "So it refuses to double up. That explains the low approval rate."
+
+## 2:05 - 2:30 · Decision Journal (then filter to APPROVE)
 
 > "Every candidate is here. Approved or rejected."
 >
 > "The strikes. The expiry. The exact rules it failed."
 >
 > "And where the AI was asked, its reasoning is saved too."
->
-> "Structured data in. Validated schema out. A bad response becomes a reject."
 
-## 2:00 - 2:40 — The numbers are real
+## 2:30 - 3:05 · The Alpaca account, then the check
 
-*Show: the Alpaca account. Then run the command.*
+Switch to the Alpaca tab, then the terminal.
 
 > "This is the paper account. Up about nine hundred dollars."
 >
@@ -90,32 +107,56 @@ running system, not the source code. The repo is one click away.
 
 > "This compares every trade against the broker's real orders."
 >
-> "All fourteen exist. Six never filled. Those are recorded as zero."
+> "All fourteen exist. Six never filled. Those count as zero."
 >
-> "The rest agree with the real fills, within five dollars and fifty cents."
+> "The rest match the real fills, within five dollars and fifty cents."
+
+---
+
+# PART 3 — BACK TO SLIDES (3:05 - 3:30)
+
+## 3:05 - 3:20 · Slide 6 "Found by testing" + Slide 9 "Honest limitations"
+
+> "Running it for real found bugs that tests did not."
 >
-> "The broker is the truth about money. The journal explains the reasoning."
+> "And two things I did not fake. No earnings filter — the data is not
+> reliable. The backtest is theoretical, and says so."
 
-## 2:40 - 3:00 — Close
+## 3:20 - 3:30 · Slide 10 "Status" or Slide 11 "Close"
 
-*Show: the Overview one more time.*
-
-> "Two things I did not fake. There is no earnings filter — the data is not
-> reliable. And the backtest is theoretical. It says so everywhere."
->
 > "Paper trading only. Checked twice before any order."
 >
 > "The AI explains. The engine decides."
 
 ---
 
+## Slides used in the video
+
+| Deck slide | Used | Why |
+|---|---|---|
+| 1 Title | ✓ | one line of identity |
+| 2 The problem | ✓ | sets up the rule |
+| 3 Architecture pipeline | — | detail; deck only |
+| 4 AI proposes / engine decides | ✓ | the core argument |
+| 5 Nine gates | — | the live table shows this better |
+| 6 Found by testing | ✓ | robustness, 10 seconds |
+| 7 AI analyst | — | covered by the journal demo |
+| 8 Dashboard + funnel | ✓ | the opening numbers |
+| 9 Honest limitations | ✓ | credibility |
+| 10 Status / 11 Close | ✓ | closing line |
+
+Skipped slides are not wasted — the deck is judged as its own deliverable, and a
+judge who wants the pipeline diagram or the full gate list will find them there.
+
 ## If you want 2 minutes
 
-Keep 0:00-0:20, 0:50-1:30, 2:00-2:40, and the last two lines. Drop the rest.
+Slide 4 (the rule) → the gate breakdown live → the reconciliation → the last two
+lines. Drop parts 1 and 3 except the closing line.
 
 ## Words to avoid while speaking
 
-If a word is hard to say, replace it. Meaning matters more than vocabulary:
+If a word is hard to say, replace it. The slide can show the technical term
+while your voice says the simple one:
 
 | Hard | Say instead |
 |---|---|
@@ -124,5 +165,3 @@ If a word is hard to say, replace it. Meaning matters more than vocabulary:
 | duplicate exposure | two positions on the same stock |
 | schema-validated | checked against a strict format |
 | candidate | option spread |
-
-You can also put these words on screen as text and simply say the short version.
