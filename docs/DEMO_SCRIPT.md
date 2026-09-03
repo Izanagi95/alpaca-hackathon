@@ -97,41 +97,46 @@ Switch to the browser. Say it out loud so the change is clear:
 
 ## 2:30 - 3:05 · The Alpaca account, then the check
 
-Switch to the Alpaca tab, then the terminal.
+Switch to the Alpaca tab. Then show the prepared screenshot (see below) instead
+of running the command live — a live command can fail, hang, or take too long
+on camera, and this result does not need to be recomputed on the spot.
 
 > "This is the paper account. Up about nine hundred dollars."
 >
 > "I did not trust my own journal. I checked it."
-
-```powershell
-.\.venv\Scripts\python.exe scripts\reconcile_journal.py
-```
-
-> "This compares every trade against the broker's real orders."
+>
+> "I compared every trade against the broker's real orders."
 >
 > "All fourteen exist. Six never filled. Those count as zero."
 >
 > "The rest match the real fills, within five dollars and fifty cents."
 
+**Prepare this screenshot ahead of time, not during recording:** run
+`.\.venv\Scripts\python.exe scripts\reconcile_journal.py` once, beforehand,
+with credentials and `DATABASE_URL` pointed at the **same** account — the
+judged one, `PA3XHQWG6YPZ` — and screenshot the `--- realized P&L ---` block.
+The script itself warns if the two are mismatched (`MISMATCH: none of the
+journal's orders exist on this account`) rather than showing wrong numbers, so
+a mismatch there means the environment is misconfigured, not that anything is
+wrong with the agent.
+
 ---
 
 # PART 3 — BACK TO SLIDES (3:05 - 3:30)
 
-## 3:05 - 3:20 · Slide 6 "Found by testing" + Slide 9 "Honest limitations"
+## 3:05 - 3:15 · Slide 6 "Found by testing"
 
 > "Running it for real found bugs that tests did not."
->
-> "And two things I did not fake."
->
-> "There is no earnings filter. The data is not reliable enough."
->
-> "The backtest is theoretical. It says so everywhere."
 
-## 3:20 - 3:30 · Slide 10 "Status" or Slide 11 "Close"
+## 3:15 - 3:25 · Slide 9 "Who it's for"
 
-> "Paper trading only. Checked twice before any order."
+> "This is not only for options."
 >
-> "The AI explains. The engine decides."
+> "It's a pattern for any AI agent near something that can lose money."
+
+## 3:25 - 3:30 · Slide 11 "Close"
+
+> "Fixed rules first. The AI second. Neither one alone."
 
 ---
 
@@ -147,8 +152,9 @@ Switch to the Alpaca tab, then the terminal.
 | 6 Found by testing | ✓ | robustness, 10 seconds |
 | 7 AI analyst | — | covered by the journal demo |
 | 8 Dashboard + funnel | ✓ | the opening numbers |
-| 9 Honest limitations | ✓ | credibility |
-| 10 Status / 11 Close | ✓ | closing line |
+| 9 Who it's for | ✓ | vision beyond this one hackathon |
+| 10 Status | — | deck only |
+| 11 Close | ✓ | closing line |
 
 Skipped slides are not wasted — the deck is judged as its own deliverable, and a
 judge who wants the pipeline diagram or the full gate list will find them there.
