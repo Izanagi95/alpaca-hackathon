@@ -1,0 +1,47 @@
+name: Account identifiers
+
+# The Alpaca credentials this agent trades with live in repository secrets, so
+# the account they belong to can only be identified from inside a job. Account
+# ids and numbers are not secrets — the hackathon submission form asks for one
+# — so printing them to the job log is safe; the API keys stay masked.
+on:
+  workflow_dispatch:
+
+jobs:
+  identify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_PAPER: "true"
+      PAPER_TRADING_ONLY: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Print account identifiers
+        run: python scripts/print_account_id.py
+
+      # Which underlyings the account actually holds is the unambiguous way to
+      # tie it back to the journal schema that recorded its trades — equity
+      # alone moves too much to match on.
+      - name: Print open positions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from app.alpaca.client import AlpacaClients
+          from app.config.settings import Settings
+
+          clients = AlpacaClients(Settings.from_env(Path(".env")))
+          positions = clients.trading.get_all_positions()
+          print(f"open_legs={len(positions)}")
+          for p in positions:
+              print(f"position {p.symbol} qty={p.qty} unrealized={p.unrealized_pl}")
+          PY
