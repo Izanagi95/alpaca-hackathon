@@ -138,16 +138,18 @@ wrong with the agent.
 The deck was left on slide 4. Switch back to that tab — do not reopen or
 reset it, so the next advance continues forward from where it was.
 
-## 3:05 - 3:15 · Slide 6 "Found by testing"
+## 3:05 - 3:15 · Slide 6 "Engineered at scale"
 
 Press → twice (passes slide 5) to land on slide 6. This is the one place in
-the video that names a specific bug instead of just claiming rigor — "I
-tested it" says nothing on its own; the fifty-two ties back to a number
-already on screen.
+the video that names a specific engineering challenge instead of just
+claiming rigor — "I tested it" says nothing on its own; the fifty-two ties
+back to a number already on screen.
 
-> "One real bug: the AI used to be asked about every candidate."
+> "One real challenge: making the AI efficient at scale."
 >
-> "That's forty-two thousand calls. Now it's fifty-two."
+> "It used to be asked about every candidate — forty-two thousand calls."
+>
+> "Now it's fifty-two."
 
 ## 3:15 - 3:25 · Slide 9 "Who it's for"
 
@@ -174,7 +176,7 @@ Press → twice (passes slide 10) to land on the last slide.
 | 3 Architecture pipeline | — | detail; deck only |
 | 4 AI proposes / engine decides | ✓ | the core argument |
 | 5 Nine gates | — | the live table shows this better |
-| 6 Found by testing | ✓ | robustness, 10 seconds |
+| 6 Engineered at scale | ✓ | a concrete challenge, 10 seconds |
 | 7 AI analyst | — | covered by the journal demo |
 | 8 Dashboard + funnel | — | the live dashboard shows this better, and showing it live beats repeating a static copy |
 | 9 Who it's for | ✓ | vision beyond this one hackathon |
