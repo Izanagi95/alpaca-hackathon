@@ -108,9 +108,8 @@ Switch to the browser. Say it out loud so the change is clear:
 
 ## 2:30 - 3:05 · The Alpaca account, then the check
 
-Switch to the Alpaca tab. Then show the prepared screenshot (see below) instead
-of running the command live — a live command can fail, hang, or take too long
-on camera, and this result does not need to be recomputed on the spot.
+Stay on the Alpaca account tab for this whole beat. No terminal, no code —
+just the account screen while you say it.
 
 > "This is the paper account. Up about nine hundred dollars."
 >
@@ -122,14 +121,11 @@ on camera, and this result does not need to be recomputed on the spot.
 >
 > "The rest match the real fills, within five dollars and fifty cents."
 
-**Prepare this screenshot ahead of time, not during recording:** run
-`.\.venv\Scripts\python.exe scripts\reconcile_journal.py` once, beforehand,
-with credentials and `DATABASE_URL` pointed at the **same** account — the
-judged one, `PA3XHQWG6YPZ` — and screenshot the `--- realized P&L ---` block.
-The script itself warns if the two are mismatched (`MISMATCH: none of the
-journal's orders exist on this account`) rather than showing wrong numbers, so
-a mismatch there means the environment is misconfigured, not that anything is
-wrong with the agent.
+**How this was checked, for your own confidence going in — not something to
+show on screen:** a script compares every journalled trade against Alpaca's
+own order history for the judged account, `PA3XHQWG6YPZ`. It flags itself if
+pointed at the wrong account rather than printing misleading numbers, so the
+"within five dollars and fifty cents" figure is safe to state as-is.
 
 ---
 
@@ -138,7 +134,7 @@ wrong with the agent.
 The deck was left on slide 4. Switch back to that tab — do not reopen or
 reset it, so the next advance continues forward from where it was.
 
-## 3:05 - 3:15 · Slide 6 "Engineered at scale"
+## 3:05 - 3:15 · Slide 6 "Proven on a live account"
 
 Press → twice (passes slide 5) to land on slide 6. This is the one place in
 the video that names a specific engineering challenge instead of just
@@ -176,7 +172,7 @@ Press → twice (passes slide 10) to land on the last slide.
 | 3 Architecture pipeline | — | detail; deck only |
 | 4 AI proposes / engine decides | ✓ | the core argument |
 | 5 Nine gates | — | the live table shows this better |
-| 6 Engineered at scale | ✓ | a concrete challenge, 10 seconds |
+| 6 Proven on a live account | ✓ | a concrete challenge, 10 seconds |
 | 7 AI analyst | — | covered by the journal demo |
 | 8 Dashboard + funnel | — | the live dashboard shows this better, and showing it live beats repeating a static copy |
 | 9 Who it's for | ✓ | vision beyond this one hackathon |
