@@ -140,9 +140,14 @@ reset it, so the next advance continues forward from where it was.
 
 ## 3:05 - 3:15 · Slide 6 "Found by testing"
 
-Press → twice (passes slide 5) to land on slide 6.
+Press → twice (passes slide 5) to land on slide 6. This is the one place in
+the video that names a specific bug instead of just claiming rigor — "I
+tested it" says nothing on its own; the fifty-two ties back to a number
+already on screen.
 
-> "Running it for real found bugs that tests did not."
+> "One real bug: the AI used to be asked about every candidate."
+>
+> "That's forty-two thousand calls. Now it's fifty-two."
 
 ## 3:15 - 3:25 · Slide 9 "Who it's for"
 
