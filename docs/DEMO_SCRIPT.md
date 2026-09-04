@@ -13,6 +13,13 @@ to speak slowly and to pause on each screen.
 **Deck:** https://claude.ai/code/artifact/b4e5900c-800f-4264-8d20-954c240d5fb0
 (arrow keys or click the edges to advance)
 
+**Deck order in this video: 1 → 2 → 4 → (switch to the browser) → 6 → 9 → 11.
+Always forward, never back.** The deck only moves one slide at a time, so
+jumping backward mid-recording means the viewer sees you flip through slides
+you already showed — that is the "it looks like it's skipping pages" problem.
+Skipping a slide forward (3, 5, 7, 8, 10) is fine: land on it for a fraction of
+a second on the way past, which reads as a normal advance, not a stumble.
+
 ## Before recording
 
 - Open **https://alpaca-hackathon.vercel.app** five minutes early. The free
@@ -27,10 +34,11 @@ to speak slowly and to pause on each screen.
 
 # PART 1 — SLIDES (0:00 - 1:15)
 
-## 0:00 - 0:20 · Slide 1 "Riskgate" + Slide 8 "Dashboard"
+## 0:00 - 0:20 · Slide 1 "Riskgate"
 
-Start on the title slide. Then jump straight to the dashboard slide, which
-carries the funnel numbers.
+Start here and stay on it for the whole line — the numbers are said, not
+shown yet. The live dashboard proves them on screen in Part 2, which lands
+better than showing the same numbers twice.
 
 > "This is Riskgate. An autonomous options trading agent on Alpaca."
 >
@@ -42,13 +50,16 @@ carries the funnel numbers.
 
 ## 0:20 - 0:45 · Slide 2 "The problem"
 
+Press → once to advance.
+
 > "Options carry real risk. A model that sounds confident is not enough."
 >
 > "So I did not give the AI the order button."
 
 ## 0:45 - 1:15 · Slide 4 "The AI can stop a trade. It can never start one."
 
-Stay on this slide. It is the most important one.
+Press → twice — this passes slide 3 in an instant, which is fine, then lands
+on slide 4. Stay here; it is the most important slide.
 
 > "Fixed rules run first. Liquidity. Credit. Days to expiry. Risk budget."
 >
@@ -124,17 +135,26 @@ wrong with the agent.
 
 # PART 3 — BACK TO SLIDES (3:05 - 3:30)
 
+The deck was left on slide 4. Switch back to that tab — do not reopen or
+reset it, so the next advance continues forward from where it was.
+
 ## 3:05 - 3:15 · Slide 6 "Found by testing"
+
+Press → twice (passes slide 5) to land on slide 6.
 
 > "Running it for real found bugs that tests did not."
 
 ## 3:15 - 3:25 · Slide 9 "Who it's for"
+
+Press → three times (passes slides 7 and 8) to land on slide 9.
 
 > "This is not only for options."
 >
 > "It's a pattern for any AI agent near something that can lose money."
 
 ## 3:25 - 3:30 · Slide 11 "Close"
+
+Press → twice (passes slide 10) to land on the last slide.
 
 > "Fixed rules first. The AI second. Neither one alone."
 
@@ -151,7 +171,7 @@ wrong with the agent.
 | 5 Nine gates | — | the live table shows this better |
 | 6 Found by testing | ✓ | robustness, 10 seconds |
 | 7 AI analyst | — | covered by the journal demo |
-| 8 Dashboard + funnel | ✓ | the opening numbers |
+| 8 Dashboard + funnel | — | the live dashboard shows this better, and showing it live beats repeating a static copy |
 | 9 Who it's for | ✓ | vision beyond this one hackathon |
 | 10 Status | — | deck only |
 | 11 Close | ✓ | closing line |
