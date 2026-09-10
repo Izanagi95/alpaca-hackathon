@@ -2,12 +2,16 @@ name: Riskgate
 
 on:
   schedule:
-    # Every 5 minutes, offset by 2 so it never lands exactly on :00/:15/:30/:45
+    # Every 15 minutes, offset by 2 so it never lands exactly on :00/:15/:30/:45
     # — GitHub's own docs note those marks are the busiest across the whole
     # platform and the most likely to delay a scheduled run. GitHub skips
     # runs when the market is closed via the is-market-open step below rather
     # than trying to encode NYSE hours/holidays in cron syntax.
-    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
+    #
+    # Slowed down from every 5 minutes once the hackathon's scoring window
+    # ended — 15 minutes still catches profit-target/stop-loss exits on open
+    # positions promptly enough, at a third of the GitHub Actions usage.
+    - cron: "2,17,32,47 * * * *"
   workflow_dispatch:
     inputs:
       force_run:
