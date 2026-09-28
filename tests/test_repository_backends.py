@@ -73,6 +73,11 @@ def test_a_url_is_used_as_is_without_local_file_creation(tmp_path) -> None:
     url = f"sqlite:///{db_path}"
     repository = DecisionRepository(url)
 
-    assert str(repository._engine.url) == url
+    # Compare the decoded path, not the raw URL string: SQLAlchemy 2.1
+    # started percent-encoding characters like ":" and "\" in a Windows path
+    # when rendering an engine URL back to a string, which made a
+    # byte-for-byte comparison version-dependent for no functional reason —
+    # `.url.database` is the actual path SQLAlchemy connects to either way.
+    assert Path(repository._engine.url.database) == db_path
     assert db_path.exists()
     repository.close()
