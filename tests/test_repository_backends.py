@@ -1,6 +1,31 @@
 from pathlib import Path
 
-from app.database.repository import DecisionRepository, _search_path_schema
+from app.database.repository import DecisionRepository, _pin_psycopg2_driver, _search_path_schema
+
+
+def test_pin_psycopg2_driver_names_the_driver_on_a_bare_postgres_url() -> None:
+    # SQLAlchemy's default driver choice for a driver-less postgresql:// URL
+    # is not a stable contract across versions (2.1 switched it from psycopg2
+    # to psycopg v3, which this project doesn't install) — naming it
+    # explicitly is what keeps a routine dependency upgrade from breaking
+    # every scheduled run with ModuleNotFoundError.
+    url = "postgresql://user:pw@host:6543/postgres?options=-c%20search_path%3Dalpaca"
+    assert _pin_psycopg2_driver(url) == (
+        "postgresql+psycopg2://user:pw@host:6543/postgres?options=-c%20search_path%3Dalpaca"
+    )
+
+
+def test_pin_psycopg2_driver_leaves_an_already_pinned_driver_alone() -> None:
+    url = "postgresql+psycopg2://user:pw@host/db"
+    assert _pin_psycopg2_driver(url) == url
+
+
+def test_pin_psycopg2_driver_does_not_corrupt_a_sqlite_url() -> None:
+    # Reconstructing every URL via urlsplit/urlunsplit loses a slash on an
+    # authority-less sqlite:///file.db URL, so anything that isn't the exact
+    # scheme being rewritten must come back byte-for-byte unchanged.
+    url = "sqlite:///riskgate.db"
+    assert _pin_psycopg2_driver(url) == url
 
 
 def test_search_path_schema_extracted_from_options_param() -> None:

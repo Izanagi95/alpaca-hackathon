@@ -87,6 +87,29 @@ def _strip_unsupported_query_params(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
 
 
+def _pin_psycopg2_driver(url: str) -> str:
+    """Rewrites a driver-less `postgresql://` URL to `postgresql+psycopg2://`.
+
+    SQLAlchemy resolves a bare `postgresql://` scheme to whichever DB-API
+    driver it currently prefers when none is named — and that preference is
+    not a stable contract: SQLAlchemy 2.1 switched it from psycopg2 to
+    psycopg (v3), which this project doesn't install, breaking every run with
+    `ModuleNotFoundError: No module named 'psycopg'` the day that release
+    reached PyPI, with no code change on this side. Naming the driver
+    explicitly makes the choice ours, not whatever `create_engine` defaults
+    to this week. A URL that already names a driver (e.g. `+psycopg2`,
+    `+pg8000`) is left alone.
+    """
+    # Reconstructing via urlunsplit unconditionally corrupts an
+    # authority-less sqlite URL (`sqlite:///file.db` loses a slash on a
+    # round trip), so anything that isn't the exact scheme being rewritten
+    # is returned untouched rather than rebuilt.
+    if urlsplit(url).scheme != "postgresql":
+        return url
+    parts = urlsplit(url)._replace(scheme="postgresql+psycopg2")
+    return urlunsplit(parts)
+
+
 def _search_path_schema(url: str) -> str | None:
     """Extracts the schema name from a `?options=-c search_path=<schema>`
     query parameter, e.g. Supabase's convention of putting the target
@@ -141,6 +164,7 @@ class DecisionRepository:
         if "://" not in url:
             url = f"sqlite:///{url}"
         url = _strip_unsupported_query_params(url)
+        url = _pin_psycopg2_driver(url)
         self._engine = _build_engine(url)
 
     def record(
