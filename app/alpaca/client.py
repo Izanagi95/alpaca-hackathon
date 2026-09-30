@@ -1,9 +1,21 @@
 from __future__ import annotations
 
+import time
+
+import requests
 from alpaca.data.historical import OptionHistoricalDataClient, StockHistoricalDataClient
 from alpaca.trading.client import TradingClient
 
 from app.config.settings import Settings
+
+# Alpaca's paper API occasionally times out or drops a connection under
+# load — found live twice (a market-data call and a positions call, on two
+# separate scheduled runs) — and each time it crashed the whole scan/monitor
+# job instead of just that one request, wasting the run and leaving the next
+# chance up to fifteen minutes away. A couple of quick retries recover most
+# of those within the same run instead.
+_MAX_ATTEMPTS = 3
+_RETRY_DELAY_SECONDS = 2.0
 
 
 class AlpacaClients:
@@ -30,7 +42,21 @@ class AlpacaClients:
 
         def request_with_timeout(method: str, url: str, **kwargs: object) -> object:
             kwargs.setdefault("timeout", timeout_seconds)
-            return original_request(method, url, **kwargs)
+            last_error: requests.exceptions.RequestException | None = None
+            for attempt in range(_MAX_ATTEMPTS):
+                try:
+                    return original_request(method, url, **kwargs)
+                except requests.exceptions.RequestException as error:
+                    # A GET is always safe to retry. A POST (order submission)
+                    # is not in general, but every write this project makes
+                    # carries its own client_order_id, so a retried submit
+                    # either reaches the broker for the first time or is
+                    # rejected as a duplicate of one that already went
+                    # through — never silently doubled.
+                    last_error = error
+                    if attempt < _MAX_ATTEMPTS - 1:
+                        time.sleep(_RETRY_DELAY_SECONDS)
+            raise last_error  # type: ignore[misc]  # loop always sets it before exhausting
 
         session.request = request_with_timeout
 
