@@ -46,7 +46,16 @@ class TradeWorkflow:
             if proposal.decision != "APPROVE":
                 risk_decision = RiskDecision(False, 0, {**risk_decision.checks, "ai_decision": False}, (*risk_decision.reasons, "ai_decision_rejected"))
 
-        self._journal.record(candidate, proposal, risk_decision)
+        if risk_decision.approved:
+            # Only approved candidates get an individual decisions row. Scanning
+            # every strike pair on every expiration means the overwhelming
+            # majority of candidates are rejected, almost all before the AI is
+            # even asked — journaling each one individually once grew the
+            # journal past 700,000 rows and 800+ MB for a hackathon window that
+            # produced about 100 real trades. The caller aggregates rejections
+            # into one per-scan summary (DecisionRepository.record_scan_summary)
+            # instead of one row per rejected candidate.
+            self._journal.record(candidate, proposal, risk_decision)
         execution = self._order_manager.submit_bull_put_spread(candidate, risk_decision)
         self._journal.record_trade_open(candidate, proposal, risk_decision, execution)
         return WorkflowResult(proposal, risk_decision, execution)

@@ -37,7 +37,11 @@ def test_approved_workflow_reaches_dry_run_execution(tmp_path) -> None:
     journal.close()
 
 
-def test_ai_rejection_is_journaled_and_cannot_execute(tmp_path) -> None:
+def test_ai_rejection_cannot_execute_and_is_not_individually_journaled(tmp_path) -> None:
+    # A rejection no longer gets its own decisions row (see
+    # TradeWorkflow.evaluate) - the caller aggregates it into a scan_summary
+    # row instead. result.risk_decision.reasons still carries everything a
+    # caller needs to do that.
     workflow, journal = make_workflow(tmp_path, {"decision": "REJECT", "score": 90, "strategy": "bull_put_spread", "confidence": 0.90, "rationale": ["event risk"], "risk_flags": ["event_risk"]})
 
     result = workflow.evaluate(make_candidate(), RiskContext(100_000, 0, 0))
@@ -45,7 +49,7 @@ def test_ai_rejection_is_journaled_and_cannot_execute(tmp_path) -> None:
     assert result.risk_decision.approved is False
     assert result.execution.submitted is False
     assert "ai_decision_rejected" in result.risk_decision.reasons
-    assert journal.count() == 1
+    assert journal.count() == 0
     journal.close()
 
 

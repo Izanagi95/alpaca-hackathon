@@ -178,6 +178,43 @@ def test_count_decisions_honours_filters(tmp_path) -> None:
     assert repo.count_decisions(final_decision="REJECT") == {"total": 1, "approved": 0}
 
 
+def test_scan_summary_adds_into_the_counts_without_double_counting(tmp_path) -> None:
+    """Rejected candidates stopped getting an individual decisions row (see
+    record_scan_summary) - count_decisions, count_ai_consulted and
+    count_gate_failures all have to add the aggregated scan_summary figures
+    on top of whatever decisions rows remain, for both new and historical
+    data, without counting anything twice."""
+    from app.database.repository import DecisionRepository
+
+    repo = DecisionRepository(tmp_path / "scansummary.db")
+    # One historical REJECT row, from before scan_summary existed.
+    _seed_decision(repo, timestamp="2026-08-20T10:00:00+00:00", symbol="NEW", final_decision="REJECT")
+    # One approval, journaled individually as always.
+    _seed_decision(repo, timestamp="2026-08-21T10:00:00+00:00", symbol="NEW", final_decision="APPROVE")
+    # A whole scan's worth of rejections, aggregated into one row.
+    repo.record_scan_summary(
+        "NEW", rejected=50, rejected_reached_ai=3,
+        gate_counts={"duplicate_exposure": 45, "open_interest": 10, "ai_score": 3},
+    )
+    # record_scan_summary with rejected=0 must not write an empty row.
+    repo.record_scan_summary("NEW", rejected=0, rejected_reached_ai=0, gate_counts={})
+
+    counts = repo.count_decisions(symbol="NEW")
+    # "total" counts every decisions row (1 REJECT + 1 APPROVE) plus the 50
+    # aggregated rejections - not just the REJECT-labelled ones.
+    assert counts == {"total": 2 + 50, "approved": 1}
+
+    # Approval always reached the AI, and 3 more reached it before being
+    # rejected on score - the historical REJECT row (seeded with risk_checks
+    # '{"reasons": []}', no ai_skipped flag) also counts as having reached it.
+    assert repo.count_ai_consulted(symbol="NEW") == 1 + 1 + 3
+
+    gates = repo.count_gate_failures(symbol="NEW")
+    assert gates["duplicate_exposure"] == 45
+    assert gates["open_interest"] == 10
+    assert gates["ai_score"] == 3
+
+
 def test_decisions_table_distinguishes_rows_by_strike_and_failed_gates(tmp_path, monkeypatch) -> None:
     """Every candidate in a scan shares symbol, timestamp and generic rationale;
     the strikes and the gates it failed are what tell them apart."""

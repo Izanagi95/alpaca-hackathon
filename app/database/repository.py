@@ -71,6 +71,24 @@ trades_table = Table(
     Column("close_client_order_id", Text),
 )
 
+scan_summary_table = Table(
+    "scan_summary",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("timestamp", Text, nullable=False),
+    Column("symbol", Text, nullable=False),
+    # Rejected candidates no longer get a decisions row each — a single scan
+    # commonly rejects 100+ candidates per symbol, almost all before the AI is
+    # even asked, and journaling every one of them grew the journal past
+    # 700,000 rows for a window that produced about 100 real trades. One row
+    # here replaces all of them: how many were rejected, how many of those
+    # had passed pre-screening (so the AI was actually asked), and which
+    # gates/reasons did the rejecting.
+    Column("rejected", Integer, nullable=False),
+    Column("rejected_reached_ai", Integer, nullable=False),
+    Column("gate_counts", Text, nullable=False),
+)
+
 
 def _strip_unsupported_query_params(url: str) -> str:
     """Removes query parameters that libpq/psycopg2 doesn't recognize as
@@ -187,6 +205,24 @@ class DecisionRepository:
                     ai_rationale=json.dumps(proposal.rationale),
                     risk_checks=json.dumps({"checks": risk_decision.checks, "reasons": risk_decision.reasons}),
                     final_decision=final_decision,
+                )
+            )
+
+    def record_scan_summary(
+        self, symbol: str, rejected: int, rejected_reached_ai: int, gate_counts: dict[str, int],
+    ) -> None:
+        """Replaces one decisions row per rejected candidate with one row per
+        symbol per scan — see scan_summary_table for why."""
+        if rejected <= 0:
+            return
+        with self._engine.begin() as conn:
+            conn.execute(
+                insert(scan_summary_table).values(
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    symbol=symbol,
+                    rejected=rejected,
+                    rejected_reached_ai=rejected_reached_ai,
+                    gate_counts=json.dumps(gate_counts),
                 )
             )
 
@@ -371,6 +407,20 @@ class DecisionRepository:
             query = query.where(decisions_table.c.final_decision == final_decision)
         return query
 
+    def _scan_summary_sum(
+        self, column_name: str, start: str | None, end: str | None, symbol: str | None,
+    ) -> int:
+        column = scan_summary_table.c[column_name]
+        query = select(func.coalesce(func.sum(column), 0))
+        if start:
+            query = query.where(scan_summary_table.c.timestamp >= start)
+        if end:
+            query = query.where(scan_summary_table.c.timestamp < f"{end}T23:59:59.999999")
+        if symbol:
+            query = query.where(scan_summary_table.c.symbol == symbol)
+        with self._engine.connect() as conn:
+            return int(conn.execute(query).scalar_one())
+
     def count_decisions(
         self, start: str | None = None, end: str | None = None,
         symbol: str | None = None, final_decision: str | None = None,
@@ -381,6 +431,13 @@ class DecisionRepository:
         a page of rows: `list_recent` caps its result, so counting what it
         returns reports the cap. With 40,000+ scanned candidates and 32
         approvals, that misreads as "200 scanned, 0 approved".
+
+        Rejected candidates stopped getting an individual decisions row (see
+        record_scan_summary) — their count lives in scan_summary instead, so
+        the total adds that in rather than undercounting everything scanned
+        since the cutover. Added only when the filter doesn't ask for
+        APPROVE-only, since every scan_summary row is, by construction,
+        rejections.
         """
         total_query = self._filtered_decisions(
             select(func.count()).select_from(decisions_table), start, end, symbol, final_decision
@@ -389,10 +446,11 @@ class DecisionRepository:
             select(func.count()).select_from(decisions_table), start, end, symbol, final_decision
         ).where(decisions_table.c.final_decision == "APPROVE")
         with self._engine.connect() as conn:
-            return {
-                "total": int(conn.execute(total_query).scalar_one()),
-                "approved": int(conn.execute(approved_query).scalar_one()),
-            }
+            total = int(conn.execute(total_query).scalar_one())
+            approved = int(conn.execute(approved_query).scalar_one())
+        if final_decision != "APPROVE":
+            total += self._scan_summary_sum("rejected", start, end, symbol)
+        return {"total": total, "approved": approved}
 
     def count_trades(
         self, start: str | None = None, end: str | None = None,
@@ -431,6 +489,14 @@ class DecisionRepository:
         A candidate can fail several gates at once, so these do not sum to the
         rejection count — that is the point: it shows which constraint is
         actually binding.
+
+        Rejections since the scan_summary cutover (see record_scan_summary)
+        never reach this table at all, so their gate counts — stored as one
+        JSON object per scan — are parsed and summed in here on top of
+        whatever historical REJECT rows remain. Summing in Python rather than
+        in SQL is fine at this volume: scan_summary has one row per symbol per
+        scan, not one per candidate, so there are orders of magnitude fewer of
+        them to fetch.
         """
         columns = [
             func.sum(
@@ -447,14 +513,34 @@ class DecisionRepository:
             query = query.where(decisions_table.c.symbol == symbol)
         with self._engine.connect() as conn:
             row = conn.execute(query).one()
-        return {gate: int(value or 0) for gate, value in zip(self.RISK_GATES, row)}
+        counts = {gate: int(value or 0) for gate, value in zip(self.RISK_GATES, row)}
+
+        summary_query = select(scan_summary_table.c.gate_counts)
+        if start:
+            summary_query = summary_query.where(scan_summary_table.c.timestamp >= start)
+        if end:
+            summary_query = summary_query.where(scan_summary_table.c.timestamp < f"{end}T23:59:59.999999")
+        if symbol:
+            summary_query = summary_query.where(scan_summary_table.c.symbol == symbol)
+        with self._engine.connect() as conn:
+            for (blob,) in conn.execute(summary_query):
+                for gate, value in json.loads(blob).items():
+                    counts[gate] = counts.get(gate, 0) + int(value)
+        return counts
 
     def count_ai_consulted(
         self, start: str | None = None, end: str | None = None, symbol: str | None = None,
     ) -> int:
         """Candidates that reached the AI, i.e. survived every deterministic
         gate that runs before it. The gap between this and the scanned total is
-        what pre-screening saves in API calls."""
+        what pre-screening saves in API calls.
+
+        Every decisions row left after the scan_summary cutover is either an
+        approval (which always reached the AI — nothing gets approved without
+        it) or a historical rejection from before the cutover, so this query
+        is still correct on its own for those; rejections since the cutover
+        add their own reached-AI count from scan_summary on top.
+        """
         query = select(func.count()).select_from(decisions_table).where(
             ~decisions_table.c.ai_decision.like("%ai_skipped_deterministic_reject%")
         )
@@ -465,7 +551,8 @@ class DecisionRepository:
         if symbol:
             query = query.where(decisions_table.c.symbol == symbol)
         with self._engine.connect() as conn:
-            return int(conn.execute(query).scalar_one())
+            consulted = int(conn.execute(query).scalar_one())
+        return consulted + self._scan_summary_sum("rejected_reached_ai", start, end, symbol)
 
     def distinct_symbols(self) -> list[str]:
         with self._engine.connect() as conn:

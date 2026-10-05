@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import dataclasses
 import sys
+from collections import Counter
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[1]
@@ -98,6 +99,14 @@ def main() -> int:
         candidates = scanner.scan(assessment)
         print(f"SCAN symbol={symbol} candidates={len(candidates)} regime={assessment.market_regime}")
 
+        # Rejections are aggregated here and written as one scan_summary row
+        # per symbol instead of one decisions row per rejected candidate —
+        # journaling every candidate individually grew the journal past
+        # 700,000 rows for a window that produced about 100 real trades.
+        symbol_rejected = 0
+        symbol_rejected_reached_ai = 0
+        gate_counts: Counter[str] = Counter()
+
         for candidate in candidates:
             scanned += 1
             quant_score = score_candidate(candidate, settings)
@@ -119,7 +128,13 @@ def main() -> int:
                 )
             else:
                 rejected += 1
+                symbol_rejected += 1
+                if "ai_skipped_deterministic_reject" not in result.proposal.risk_flags:
+                    symbol_rejected_reached_ai += 1
+                gate_counts.update(result.risk_decision.reasons)
                 print(f"REJECTED symbol={symbol} reasons={result.risk_decision.reasons}")
+
+        journal.record_scan_summary(symbol, symbol_rejected, symbol_rejected_reached_ai, dict(gate_counts))
 
     journal.close()
     print(f"AGENT DONE scanned={scanned} approved={approved} rejected={rejected}")
